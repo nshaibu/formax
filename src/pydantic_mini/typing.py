@@ -27,6 +27,8 @@ if typing.TYPE_CHECKING:
 __all__ = (
     "Annotated",
     "MiniAnnotated",
+    "evaluate_forward_ref",
+    "resolve_and_cache_forward_ref",
     "Attrib",
     "get_type",
     "is_collection",
@@ -52,7 +54,7 @@ __all__ = (
 logger = logging.getLogger(__name__)
 
 
-ValidatorType = typing.Callable[[typing.Any], None]
+ValidatorType = typing.Callable[["BaseModel", typing.Any], typing.Union[bool, None]]
 
 PreFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
 
@@ -89,6 +91,8 @@ _NON_DATACLASS_CONFIG_FIELD: typing.List[str] = [
     "disable_typecheck",
     "disable_all_validation",
 ]
+
+_resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
 
 
 class ModelConfigWrapper:
@@ -229,26 +233,6 @@ class Attrib:
             return self.default_factory()
         return MISSING
 
-    # def execute_pre_formatter(
-    #     self, instance, value: typing.Any, mini_field: "MiniField"
-    # ) -> None:
-    #     if self.has_pre_formatter():
-    #         try:
-    #             value = self.pre_formatter(value)
-    #             if self.allow_none and value is None:
-    #                 mini_field.set_field_value(instance, None)
-    #             else:
-    #                 mini_field.set_field_value(instance, value)
-    #         except Exception as exc:
-    #             logger.error(
-    #                 "Pre-formatter error for %s : %s",
-    #                 (mini_field.name, exc),
-    #                 exc_info=exc,
-    #             )
-    #             raise RuntimeError(
-    #                 f"Error occurred while executing the pre-formatter for field: {mini_field.name}"
-    #             ) from exc
-
     def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
         value = value or self._get_default()
 
@@ -376,6 +360,51 @@ class Attrib:
             )
 
 
+if sys.version_info < (3, 9):
+
+    def evaluate_forward_ref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
+        return type_._evaluate(globalns, localns)
+
+elif sys.version_info < (3, 12, 4):
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Even though it is the right signature for python 3.9, mypy complains with
+        # `error: Too many arguments for "_evaluate" of "ForwardRef"` hence the cast...
+        # Python 3.13/3.12.4+ made `recursive_guard` a kwarg, so name it explicitly to avoid:
+        # TypeError: ForwardRef._evaluate() missing 1 required keyword-only argument: 'recursive_guard'
+        return typing.cast(typing.Any, type_)._evaluate(
+            globalns, localns, recursive_guard=set()
+        )
+
+elif sys.version_info < (3, 14):
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return typing.cast(typing.Any, type_)._evaluate(
+            globalns, localns, type_params=(), recursive_guard=set()
+        )
+
+else:
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return typing.evaluate_forward_ref(
+            type_,
+            globals=globalns,
+            locals=localns,
+            type_params=(),
+            _recursive_guard=set(),
+        )
+
+
 def is_mini_annotated(typ) -> bool:
     origin = get_origin(typ)
     return (
@@ -441,16 +470,50 @@ def is_any_type(typ) -> bool:
     return False
 
 
-def get_type(typ):
+def resolve_and_cache_forward_ref(
+    type_: ForwardRef,
+    globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+) -> typing.Any:
+    print(globalns)
+    forward_ref_name = get_forward_type(type_)
+    if forward_ref_name:
+        _typ = _resolved_forward_ref.get(forward_ref_name)
+        if _typ is None:
+            try:
+                _typ = evaluate_forward_ref(type_, globalns=globalns, localns=localns)
+            except NameError as e:
+                logger.warning("Forward reference type resolution failed: %s", e)
+                import pdb
+
+                pdb.set_trace()
+                raise
+            _resolved_forward_ref[forward_ref_name] = _typ
+
+        return _typ
+    return None
+
+
+def get_type(
+    typ: typing.Any,
+    globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    resolve_forward_ref: bool = True,
+) -> typing.Any:
     if is_type(typ):
         return typ
 
     if is_optional_type(typ):
         type_args = get_args(typ)
         if type_args:
-            return get_type(type_args[0])
+            return get_type(
+                type_args[0],
+                resolve_forward_ref=resolve_forward_ref,
+                globalns=globalns,
+                localns=localns,
+            )
         else:
-            return None
+            return NoneType
 
     if is_any_type(typ):
         return object
@@ -459,9 +522,16 @@ def get_type(typ):
     if is_type(origin):
         return origin
 
+    if resolve_forward_ref:
+        forward_ref_type = resolve_and_cache_forward_ref(
+            typ, globalns=globalns, localns=localns
+        )
+        if forward_ref_type is not None:
+            return forward_ref_type
+
     type_args = get_args(typ)
     if len(type_args) > 0:
-        return get_type(type_args[0])
+        return get_type(type_args[0], globalns=globalns, localns=localns)
     else:
         return None
 
@@ -585,7 +655,7 @@ class MiniAnnotated:
 
         typ = params[0]
 
-        actual_typ = get_type(typ)
+        actual_typ = get_type(typ, resolve_forward_ref=False)
         forward_typ = get_forward_type(typ)
         if actual_typ is None and forward_typ is None:
             raise ValueError("'{}' is not a type".format(params[0]))

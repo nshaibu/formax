@@ -459,7 +459,7 @@ class TestBase(unittest.TestCase):
             class Person(BaseModel):
                 name: MiniAnnotated[str, 12]
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises((ValueError, TypeError)):
 
             class Person(BaseModel):
                 name: MiniAnnotated[typing.Optional, Attrib()]

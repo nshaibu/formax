@@ -210,16 +210,16 @@ class SchemaMeta(type):
 
     @staticmethod
     def coerce_value_to_dataclass_field(
-        field_name: str, attrs: typing.Dict[str, typing.Any], default_value=MISSING
+        field_name: str,
+        attrs: typing.Dict[str, typing.Any],
+        default_value: typing.Any = MISSING,
     ) -> Field:
         value = attrs.get(field_name, default_value)
         if not isinstance(value, Field):
-            if value is None:
-                value = field(default=default_value)
-            elif default_value is MISSING:
+            if value is MISSING:
                 value = field()
             else:
-                value = field(default=default_value)
+                value = field(default=value)
         return value
 
     @classmethod
@@ -275,7 +275,7 @@ class SchemaMeta(type):
                 continue
 
             if not is_mini_annotated(annotation):
-                if get_type(annotation) is None:
+                if get_type(annotation, resolve_forward_ref=False) is None:
                     # Let's confirm that the annotation isn't a forward type
                     forward_annotation = get_forward_type(annotation)
                     if forward_annotation is None:
@@ -317,16 +317,18 @@ class SchemaMeta(type):
             else:
                 ann_without_defaults[field_name] = annotation
 
-            default_value = attrs.get(field_name, value)
-            if not isinstance(default_value, Field):
-                if default_value is None:
-                    default_value = field(default=default_value)
-                elif default_value is MISSING:
-                    default_value = field()
-                else:
-                    default_value = field(default=default_value)
+            # default_value = attrs.get(field_name, value)
+            # if not isinstance(default_value, Field):
+            #     if default_value is None:
+            #         default_value = field(default=default_value)
+            #     elif default_value is MISSING:
+            #         default_value = field()
+            #     else:
+            #         default_value = field(default=default_value)
 
-            mini_field = MiniField(field_name, annotation, default_value)
+            value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
+
+            mini_field = MiniField(field_name, annotation, value_field)
 
             if field_name in validators:
                 for validator_func in validators[field_name]:
