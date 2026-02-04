@@ -1,8 +1,7 @@
 import typing
 import inspect
 from enum import Enum
-from functools import lru_cache
-from dataclasses import fields, Field, field, MISSING, is_dataclass
+from dataclasses import fields as dc_fields, Field, MISSING, is_dataclass
 from .typing import (
     is_mini_annotated,
     get_type,
@@ -14,19 +13,190 @@ from .typing import (
     is_collection,
     is_optional_type,
     is_builtin_type,
-    evaluate_forward_ref,
     ValidatorType,
     PreFormatType,
     resolve_and_cache_forward_ref,
 )
-from .utils import init_class
 from .exceptions import ValidationError
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
 
 
-# _resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
+class _ExpectedType:
+    __slots__ = ("type", "order", "is_builtin", "is_enum", "is_model", "is_class")
+
+    def __init__(self, typ_: typing.Type[typing.Any], order: int):
+        self.type: type = typ_
+
+        # will be saved in non-ordered datastructures so we keep the order
+        self.order = order
+
+        self.is_builtin: bool = is_builtin_type(self.type)
+        self.is_enum: bool = isinstance(self.type, type) and issubclass(self.type, Enum)
+        self.is_model: bool = hasattr(
+            self.type, "__pydantic_mini_extra_config__"
+        ) or is_dataclass(self.type)
+        self.is_class: bool = inspect.isclass(self.type)
+
+    def isinstance_of(self, value: typing.Any) -> bool:
+        return isinstance(value, self.type)
+
+    def __str__(self) -> str:
+        return self.type.__name__
+
+    def __repr__(self) -> str:
+        return repr(self.type)
+
+    def __call__(self, *args, **kwargs):
+        try:
+            return self.type(*args, **kwargs)
+        except TypeError as e:
+            raise TypeError(f"Failed to instantiate {str(self.type)} from dict: {e}")
+
+    def __hash__(self) -> int:
+        return hash(
+            (self.type, self.is_builtin, self.is_enum, self.is_model, self.is_class)
+        )
+
+
+class _ExpectedTypeResolver:
+    __slots__ = ("_actual_types", "_strict_model")
+
+    def __init__(
+        self, actual_types: typing.Tuple[type], strict_model: bool = False
+    ) -> None:
+        """
+        Validate and coerce datatype
+        :param actual_types: Tuple of types to validate
+        :param strict_model: Validation model
+        """
+        if not actual_types:
+            raise TypeError("No types were provided")
+
+        self._actual_types: typing.List[_ExpectedType] = []
+
+        for index, typ in enumerate(actual_types):
+            expected_type = _ExpectedType(typ, order=index)
+            if expected_type not in self._actual_types:
+                self._actual_types.append(expected_type)
+
+        self._actual_types = sorted(self._actual_types, key=lambda t: t.order)
+
+        self._strict_model: bool = strict_model
+
+    def type_string(self) -> str:
+        if self._actual_types:
+            return ", ".join([str(t) for t in self._actual_types])  # type: ignore
+        return ""
+
+    def validate(self, value: typing.Any) -> bool:
+        """Check if value matches any of the expected types"""
+        # import pdb;pdb.set_trace()
+        return self.get_matching_type(value) is not None
+
+    def coerce(self, value: typing.Any) -> typing.Any:
+        """Convert value to one of the expected types"""
+        matching_type = self.get_matching_type(value)
+
+        if matching_type is None:
+            raise TypeError(
+                f"Cannot coerce {type(value).__name__} to any of {self.type_string()}"
+            )
+
+        if matching_type.isinstance_of(value):
+            return value
+
+        if isinstance(value, dict):
+            if matching_type.is_model or matching_type.is_class:
+                return self._instantiate_from_dict(matching_type, value)
+
+        try:
+            return matching_type(value)
+        except (ValueError, TypeError) as e:
+            raise TypeError(
+                f"Failed to coerce {value} to {matching_type.__name__}: {e}"
+            )
+
+    def get_matching_type(self, value: typing.Any) -> typing.Optional[_ExpectedType]:
+        """Determine which type best matches the value"""
+
+        for expected_type in self._actual_types:
+            if expected_type.isinstance_of(value):
+                return expected_type
+
+        # coercion type detection section
+        if not self._strict_model:
+            if isinstance(value, dict):
+                for expected_type in self._actual_types:
+                    if expected_type.is_class and self._matches_class_signature(
+                        expected_type, value
+                    ):
+                        return expected_type
+
+            for expected_type in self._actual_types:
+                if expected_type.is_builtin or expected_type.is_enum:
+                    try:
+                        expected_type(value)
+                        return expected_type
+                    except (ValueError, TypeError):
+                        continue
+
+        return None
+
+    def _matches_class_signature(
+        self, expected_type: _ExpectedType, data: dict
+    ) -> bool:
+        """Check if dict keys match class constructor signature."""
+        try:
+            if expected_type.is_model:
+                fields = dc_fields(expected_type.type)  # type: ignore
+                field_names = {f.name for f in fields}
+                required = {
+                    f.name
+                    for f in fields
+                    if f.default == MISSING and f.default_factory == MISSING
+                }
+                # Dataclasses don't support **kwargs in the standard sense unless
+                # custom __init__ is defined, so we stick to field names.
+                return required.issubset(data.keys()) and set(data.keys()).issubset(
+                    field_names
+                )
+
+            else:
+                sig = inspect.signature(expected_type.type)
+                params = sig.parameters
+
+                # Check for **kwargs
+                has_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
+
+                field_names = set(params.keys())
+                required = {
+                    n
+                    for n, p in params.items()
+                    if p.default == inspect.Parameter.empty
+                    and p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
+                }
+
+                # All required parameters MUST be in the dict.
+                if not required.issubset(data.keys()):
+                    return False
+
+                # If the class DOES NOT have **kwargs, keys must be a subset of field names.
+                # If the class DOES have **kwargs, any extra keys are allowed.
+                if not has_kwargs and not set(data.keys()).issubset(field_names):
+                    return False
+
+                return True
+
+        except (ValueError, TypeError):
+            return False
+
+    def _instantiate_from_dict(
+        self, _expected_type: _ExpectedType, data: typing.Dict[str, typing.Any]
+    ) -> typing.Any:
+        """Instantiate a class from a dictionary"""
+        return _expected_type(**data)
 
 
 class MiniField:
@@ -35,6 +205,7 @@ class MiniField:
         "name",
         "private_name",
         "expected_type",
+        "inner_type",
         "_field_validators",
         "_preformat_callbacks",
         "_mini_annotated_type",
@@ -42,12 +213,7 @@ class MiniField:
         "_inner_type_args",
         "_query",
         "type_annotation_args",
-        "is_builtin",
-        "is_enum",
-        "is_model",
         "is_collection",
-        "is_class",
-        "_is_type_expectation_init",
         "forward_ref_type_name",
         "_default",
         "_default_factory",
@@ -79,11 +245,10 @@ class MiniField:
 
         self._inner_type_args = get_args(self._actual_annotated_type)
 
-        self.is_collection, self.expected_type = is_collection(
-            self._actual_annotated_type
-        )
+        self.is_collection, _ = is_collection(self._actual_annotated_type)
 
-        self._is_type_expectation_init: bool = False
+        self.expected_type: typing.Optional[_ExpectedTypeResolver] = None
+        self.inner_type: typing.Optional[typing.Type[typing.Any]] = None
 
         self.forward_ref_type_name: typing.Optional[str] = get_forward_type(
             self._actual_annotated_type
@@ -119,30 +284,29 @@ class MiniField:
             return self._default_factory()
         return MISSING
 
-    def _init_type_expectations(self, instance: "BaseModel"):
+    def _init_type_expectations(self, instance: "BaseModel", strict_status: bool):
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
                 self._actual_annotated_type, instance=instance, resolve_forward_ref=True
             )
         )
 
-        if not self.is_collection:
-            self.expected_type = (
-                self.type_annotation_args[0]
-                if self.type_annotation_args
-                else typing.Any
-            )
-
-        self.is_builtin: bool = is_builtin_type(self.expected_type)
-        self.is_enum: bool = isinstance(self.expected_type, type) and issubclass(
-            self.expected_type, Enum
+        self.expected_type = _ExpectedTypeResolver(
+            actual_types=self.type_annotation_args, strict_model=strict_status
         )
-        self.is_model: bool = hasattr(
-            self.expected_type, "__pydantic_mini_extra_config__"
-        ) or is_dataclass(self.expected_type)
-        self.is_class: bool = inspect.isclass(self.expected_type)
 
-        self._is_type_expectation_init = True
+        inner_types_list: typing.List[type] = []
+
+        for t in self._inner_type_args:
+            if t not in inner_types_list:
+                typ = get_type(t, globalns=self.get_model_context(instance))
+                if typ is not None:
+                    inner_types_list.append(typ)
+
+        try:
+            self.inner_type = _ExpectedTypeResolver(actual_types=tuple(inner_types_list), strict_model=strict_status)  # type: ignore
+        except TypeError:
+            self.inner_type = None
 
     def __get__(self, instance: "BaseModel", owner: typing.Any = None) -> typing.Any:
         if instance is None:
@@ -166,16 +330,15 @@ class MiniField:
         disable_typecheck = config.get("disable_typecheck", False)
         disable_all_validation = config.get("disable_all_validation", False)
 
-        # self.type_annotation_args = [self.resolve_actual_type(typ_) for typ_ in self.type_annotation_args]
-        print(self.type_annotation_args)
-
-        if not self._is_type_expectation_init:
-            self._init_type_expectations(instance)
+        if self.expected_type is None:
+            self._init_type_expectations(instance, strict_status=strict_mode)
 
         if isinstance(value, MiniField):
             value = value.get_default()
             if value is MISSING:
-                raise AttributeError("Field required")
+                raise AttributeError(
+                    "No value provided for field '{}'".format(self.name)
+                )
 
         for preformat_callback in self._preformat_callbacks:
             try:
@@ -190,7 +353,7 @@ class MiniField:
             # no type validation for Any field type and type checking is not disabled
             if self._actual_annotated_type is not typing.Any and not disable_typecheck:
                 if not strict_mode:
-                    coerced_value = self._value_coerce(value, instance)
+                    coerced_value = self._value_coerce(value)
                     if coerced_value is not None:
                         value = coerced_value
                 self._field_type_validator(value, instance)
@@ -228,54 +391,16 @@ class MiniField:
             return None
         return getattr(inspect.getmodule(instance.__class__), "__dict__", None)
 
-    def _value_coerce(self, value: typing.Any, instance: "BaseModel") -> typing.Any:
-        from .base import BaseModel
-
+    def _value_coerce(self, value: typing.Any) -> typing.Any:
         if self.is_collection:
             if self.type_annotation_args and isinstance(value, (dict, list)):
                 value = value if isinstance(value, list) else [value]
-                inner_type: type = self._inner_type_args[0]
-
-                inner_type = self.resolve_actual_type(
-                    inner_type, globalns=self.get_model_context(instance)
-                )
-
-                if is_builtin_type(inner_type):
-                    return self.expected_type([inner_type(val) for val in value])
-                elif (
-                    (isinstance(inner_type, type) and issubclass(inner_type, BaseModel))
-                    or is_dataclass(inner_type)
-                    or inspect.isclass(inner_type)
-                ):
-                    return self.expected_type(
-                        [
-                            (
-                                init_class(inner_type, val)
-                                if isinstance(val, dict)
-                                else val
-                            )
-                            for val in value
-                        ]
+                if self.inner_type is not None:
+                    return self.expected_type.coerce(
+                        [self.inner_type.coerce(val) for val in value]
                     )
-        elif self._actual_annotated_type:
-            if isinstance(value, dict):
-                if self.is_model or self.is_class:
-                    return init_class(self.expected_type, value)
-
-            # Enums (Coerce string/int to Enum member)
-            elif self.is_enum:
-                if value is not None and not isinstance(value, self.expected_type):
-                    try:
-                        return self.expected_type(value)
-                    except ValueError:
-                        pass
-            # Primitives (Last-ditch coercion for strings to int/float)
-            elif self.is_builtin:
-                if value is not None and not isinstance(value, self.expected_type):
-                    try:
-                        return self.expected_type(value)
-                    except (ValueError, TypeError):
-                        pass
+        else:
+            return self.expected_type.coerce(value)
 
         return None
 
@@ -302,9 +427,11 @@ class MiniField:
                                 inner_type, value
                             )
                         )
-            elif not isinstance(value, self.type_annotation_args):
+            elif not self.expected_type.validate(
+                value
+            ):  # not isinstance(value, self.type_annotation_args):
                 raise TypeError(
-                    f"Field '{self.name!r}' should be of type {self.type_annotation_args}, "
+                    f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
                     f"but got {type(value).__name__}."
                 )
 
@@ -318,14 +445,13 @@ class MiniField:
     ) -> typing.Type[typing.Any]:
         if self.forward_ref_type_name:
             typ = typing.cast(typing.ForwardRef, typ)
-            # _typ = _resolved_forward_ref.get(self.forward_ref_type_name)
-            # if _typ is None:
-            #     _typ = evaluate_forward_ref(typ, globalns=globals(), localns=locals())
-            #     _resolved_forward_ref[self.forward_ref_type_name] = _typ
-            return resolve_and_cache_forward_ref(
+            typ_temp = resolve_and_cache_forward_ref(
                 typ, globalns=globalns, localns=localns
             )
-        return typ
+            if typ_temp is None:
+                return get_type(typ, globalns=globalns, localns=localns)
+            return typ_temp
+        return get_type(typ, globalns=globalns, localns=localns)
 
     def type_can_be_validated(
         self,
@@ -348,7 +474,6 @@ class MiniField:
                         _set.add(_arg_type)
 
                 return tuple(_set)
-                # return tuple([get_type(_typ) for _typ in type_args if _typ is not None])
         else:
             return (
                 get_type(

@@ -357,6 +357,9 @@ class TestBase(unittest.TestCase):
             name: str
             location: typing.Union[int, str]
 
+            class Config:
+                strict_mode = True
+
         person = Person(name="nafiu", location="kumasi")
         self.assertEqual(person.name, "nafiu")
         self.assertEqual(person.location, "kumasi")

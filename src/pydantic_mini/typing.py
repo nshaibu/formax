@@ -475,7 +475,6 @@ def resolve_and_cache_forward_ref(
     globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
     localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
 ) -> typing.Any:
-    print(globalns)
     forward_ref_name = get_forward_type(type_)
     if forward_ref_name:
         _typ = _resolved_forward_ref.get(forward_ref_name)
@@ -484,9 +483,6 @@ def resolve_and_cache_forward_ref(
                 _typ = evaluate_forward_ref(type_, globalns=globalns, localns=localns)
             except NameError as e:
                 logger.warning("Forward reference type resolution failed: %s", e)
-                import pdb
-
-                pdb.set_trace()
                 raise
             _resolved_forward_ref[forward_ref_name] = _typ
 

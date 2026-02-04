@@ -49,6 +49,7 @@ def get_function_call_args(
     return params_dict
 
 
+# TODO: removing this util since model instantiation was moved to _ExpectedType
 def init_class(
     klass: typing.Type[T],
     params: typing.Union[typing.Dict[str, typing.Any], object],
