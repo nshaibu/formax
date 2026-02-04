@@ -52,14 +52,22 @@ class SchemaMeta(type):
         model_config_class: typing.Type = getattr(new_class, "Config", None)
 
         config = ModelConfigWrapper(model_config_class)
-
-        setattr(
-            new_class,
-            PYDANTIC_MINI_EXTRA_MODEL_CONFIG,
-            config.get_non_dataclass_config(),
+        non_dataclass_config: typing.Dict[str, typing.Any] = (
+            config.get_non_dataclass_config()
         )
 
+        setattr(new_class, PYDANTIC_MINI_EXTRA_MODEL_CONFIG, non_dataclass_config)
+
         new_class = dataclass(new_class, **config.get_dataclass_config())  # type: ignore
+
+        # Let's activate the fields for type checking
+        for field_name in new_attrs.get("__annotations__", {}):
+            mini_field = new_attrs.get(field_name, None)
+            if isinstance(mini_field, MiniField):
+                # Initialise type expectations with the fully realised class
+                mini_field._init_type_expectations(
+                    new_class, non_dataclass_config["strict_mode"], False
+                )
 
         matcher = _ClassSignatureMatcher(new_class)
         setattr(new_class, "__signature_matcher__", matcher)

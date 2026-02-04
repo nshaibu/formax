@@ -2,6 +2,8 @@ import typing
 import inspect
 from enum import Enum
 from dataclasses import fields as dc_fields, Field, MISSING, is_dataclass
+from typing import ForwardRef
+
 from .typing import (
     is_mini_annotated,
     get_type,
@@ -10,8 +12,8 @@ from .typing import (
     get_forward_type,
     Annotated,
     Attrib,
+    NoneType,
     is_collection,
-    is_optional_type,
     is_builtin_type,
     ValidatorType,
     PreFormatType,
@@ -74,16 +76,21 @@ class _ExpectedType:
         "is_enum",
         "is_model",
         "is_class",
+        "is_forward_ref",
         "signature_matcher",
     )
 
-    def __init__(self, typ_: typing.Type[typing.Any], order: int):
+    def __init__(self, typ_: typing.Type[typing.Any], order: int) -> None:
+        if typ_ is None:
+            typ_ = NoneType
+
         self.type: type = typ_
 
         # will be saved in non-ordered datastructures so we keep the order
         self.order: int = order
         self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
 
+        self.is_forward_ref = get_forward_type(typ_) is not None
         self.is_builtin: bool = is_builtin_type(self.type)
         self.is_enum: bool = isinstance(self.type, type) and issubclass(self.type, Enum)
         self.is_model: bool = hasattr(
@@ -91,8 +98,65 @@ class _ExpectedType:
         ) or is_dataclass(self.type)
         self.is_class: bool = inspect.isclass(self.type)
 
+        if self.is_null_type():
+            self.is_builtin = True
+
+    def is_null_type(self) -> bool:
+        if self.is_class:
+            name = getattr(self.type, "__name__", None)
+            if name is None:
+                return False
+            return name == "NoneType"
+        return self.type is NoneType
+
     def isinstance_of(self, value: typing.Any) -> bool:
+        if self.type is None:
+            self.type = NoneType
         return isinstance(value, self.type)
+
+    def resolve_type(
+        self,
+        globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+        localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    ) -> "_ExpectedType":
+        """Resolve forward references to concrete types.
+
+        Args:
+            globalns: Global namespace for type resolution
+            localns: Local namespace for type resolution
+
+        Returns:
+            Self with resolved type information
+        """
+        if self.type is None:
+            self.type = NoneType
+
+        if not self.is_forward_ref:
+            return self
+        elif not isinstance(self.type, str):
+            return self
+
+        forward_type = self.type
+        if isinstance(forward_type, str):
+            forward_type = ForwardRef(forward_type)
+
+        resolved_type = resolve_and_cache_forward_ref(
+            forward_type, globalns=globalns, localns=localns
+        )
+
+        self._update_from_resolved_type(resolved_type)
+
+        return self
+
+    def _update_from_resolved_type(self, resolved_type: typing.Any) -> None:
+        """Update instance attributes based on resolved type."""
+        temp_type = _ExpectedType(resolved_type, self.order)
+
+        self.type = resolved_type
+        self.is_builtin = temp_type.is_builtin
+        self.is_enum = temp_type.is_enum
+        self.is_model = temp_type.is_model
+        self.is_class = temp_type.is_class
 
     def get_signature_matcher(self) -> _ClassSignatureMatcher:
         if getattr(self, "signature_matcher", None) is None:
@@ -102,6 +166,9 @@ class _ExpectedType:
         return self.signature_matcher
 
     def matches(self, data: typing.Dict[str, typing.Any]) -> bool:
+        if self.is_null_type():
+            return False
+
         matcher = self.get_signature_matcher()
 
         if not matcher:
@@ -146,7 +213,7 @@ class _ExpectedType:
 
 
 class _ExpectedTypeResolver:
-    __slots__ = ("_actual_types", "_strict_model")
+    __slots__ = ("_actual_types", "_strict_model", "module_context")
 
     def __init__(
         self, actual_types: typing.Tuple[type], strict_model: bool = False
@@ -170,6 +237,8 @@ class _ExpectedTypeResolver:
 
         self._strict_model: bool = strict_model
 
+        self.module_context: typing.Dict[str, typing.Any] = {}
+
     def type_string(self) -> str:
         if self._actual_types:
             return ", ".join([str(t) for t in self._actual_types])  # type: ignore
@@ -186,10 +255,14 @@ class _ExpectedTypeResolver:
 
         if matching_type is None:
             raise TypeError(
-                f"Cannot coerce {type(value).__name__} to any of {self.type_string()}"
+                f"Cannot coerce {type(value).__name__} to any of the type(s) {self.type_string()}"
             )
 
-        if matching_type.isinstance_of(value):
+        resolved_matching_type = matching_type.resolve_type(
+            globalns=self.module_context
+        )
+
+        if resolved_matching_type.isinstance_of(value):
             return value
 
         if isinstance(value, dict):
@@ -197,7 +270,7 @@ class _ExpectedTypeResolver:
                 return self._instantiate_from_dict(matching_type, value)
 
         try:
-            return matching_type(value)
+            return resolved_matching_type(value)
         except (ValueError, TypeError) as e:
             raise TypeError(
                 f"Failed to coerce {value} to {matching_type.__name__}: {e}"
@@ -207,7 +280,9 @@ class _ExpectedTypeResolver:
         """Determine which type best matches the value"""
 
         for expected_type in self._actual_types:
-            if expected_type.isinstance_of(value):
+            if expected_type.resolve_type(globalns=self.module_context).isinstance_of(
+                value
+            ):
                 return expected_type
 
         # coercion type detection section
@@ -220,7 +295,7 @@ class _ExpectedTypeResolver:
             for expected_type in self._actual_types:
                 if expected_type.is_builtin or expected_type.is_enum:
                     try:
-                        expected_type(value)
+                        expected_type.resolve_type(globalns=self.module_context)(value)
                         return expected_type
                     except (ValueError, TypeError):
                         continue
@@ -231,7 +306,7 @@ class _ExpectedTypeResolver:
         self, _expected_type: _ExpectedType, data: typing.Dict[str, typing.Any]
     ) -> typing.Any:
         """Instantiate a class from a dictionary"""
-        return _expected_type(**data)
+        return _expected_type.resolve_type(globalns=self.module_context)(**data)
 
 
 class MiniField:
@@ -283,7 +358,7 @@ class MiniField:
         self.is_collection, _ = is_collection(self._actual_annotated_type)
 
         self.expected_type: typing.Optional[_ExpectedTypeResolver] = None
-        self.inner_type: typing.Optional[typing.Type[typing.Any]] = None
+        self.inner_type: typing.Optional[_ExpectedTypeResolver] = None
 
         self.forward_ref_type_name: typing.Optional[str] = get_forward_type(
             self._actual_annotated_type
@@ -319,10 +394,17 @@ class MiniField:
             return self._default_factory()
         return MISSING
 
-    def _init_type_expectations(self, instance: "BaseModel", strict_status: bool):
+    def _init_type_expectations(
+        self,
+        instance: "BaseModel",
+        strict_status: bool,
+        resolve_forward_ref: bool = True,
+    ):
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
-                self._actual_annotated_type, instance=instance, resolve_forward_ref=True
+                self._actual_annotated_type,
+                instance=instance,
+                resolve_forward_ref=resolve_forward_ref,
             )
         )
 
@@ -334,7 +416,11 @@ class MiniField:
 
         for t in self._inner_type_args:
             if t not in inner_types_list:
-                typ = get_type(t, globalns=self.get_model_context(instance))
+                typ = get_type(
+                    t,
+                    globalns=self.get_model_context(instance),
+                    resolve_forward_ref=resolve_forward_ref,
+                )
                 if typ is not None:
                     inner_types_list.append(typ)
 
@@ -367,6 +453,12 @@ class MiniField:
 
         if self.expected_type is None:
             self._init_type_expectations(instance, strict_status=strict_mode)
+
+        model_context = self.get_model_context(instance)
+
+        self.expected_type.module_context = model_context
+        if self.inner_type is not None:
+            self.inner_type.module_context = model_context
 
         if isinstance(value, MiniField):
             value = value.get_default()
@@ -462,9 +554,7 @@ class MiniField:
                                 inner_type, value
                             )
                         )
-            elif not self.expected_type.validate(
-                value
-            ):  # not isinstance(value, self.type_annotation_args):
+            elif not self.expected_type.validate(value):
                 raise TypeError(
                     f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
                     f"but got {type(value).__name__}."

@@ -474,9 +474,13 @@ def resolve_and_cache_forward_ref(
     type_: ForwardRef,
     globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
     localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    dont_resolve: bool = False,
 ) -> typing.Any:
     forward_ref_name = get_forward_type(type_)
     if forward_ref_name:
+        if dont_resolve:
+            return forward_ref_name
+
         _typ = _resolved_forward_ref.get(forward_ref_name)
         if _typ is None:
             try:
@@ -518,12 +522,11 @@ def get_type(
     if is_type(origin):
         return origin
 
-    if resolve_forward_ref:
-        forward_ref_type = resolve_and_cache_forward_ref(
-            typ, globalns=globalns, localns=localns
-        )
-        if forward_ref_type is not None:
-            return forward_ref_type
+    forward_ref_type = resolve_and_cache_forward_ref(
+        typ, globalns=globalns, localns=localns, dont_resolve=not resolve_forward_ref
+    )
+    if forward_ref_type is not None:
+        return forward_ref_type
 
     type_args = get_args(typ)
     if len(type_args) > 0:
