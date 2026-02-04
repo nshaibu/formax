@@ -165,7 +165,7 @@ json_output = person.dump(_format="json")
 dict_output = person.dump(_format="dict")
 ```
 
-##### `__model_init__(self, **kwargs)`
+##### `__post_init__(self, **kwargs)`
 Optional method for custom initialization logic.
 
 **Example:**
@@ -178,7 +178,7 @@ class DatabaseModel(BaseModel):
     name: str
     database: InitVar[Optional[object]] = None
     
-    def __model_init__(self, database):
+    def __post_init__(self, database):
         if database is not None:
             # Custom initialization logic
             self.id = database.get_next_id()
@@ -217,10 +217,9 @@ Define custom validation functions:
 ```python
 from pydantic_mini.exceptions import ValidationError
 
-def validate_not_kofi(instance, value: str):
+def validate_not_kofi(instance: BaseModel, value: str):
     if value.lower() == "kofi":
         raise ValidationError("Kofi is not a valid name")
-    return value.upper()  # Transform the value
 
 class Employee(BaseModel):
     name: MiniAnnotated[str, Attrib(validators=[validate_not_kofi])]
