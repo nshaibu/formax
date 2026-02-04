@@ -214,9 +214,6 @@ class _ExpectedTypeResolver:
         if not self._strict_model:
             if isinstance(value, dict):
                 for expected_type in self._actual_types:
-                    # if expected_type.is_class and self._matches_class_signature(
-                    #     expected_type, value
-                    # ):
                     if expected_type.is_class and expected_type.matches(value):
                         return expected_type
 
@@ -229,54 +226,6 @@ class _ExpectedTypeResolver:
                         continue
 
         return None
-
-    # def _matches_class_signature(
-    #     self, expected_type: _ExpectedType, data: dict
-    # ) -> bool:
-    #     """Check if dict keys match class constructor signature."""
-    #     try:
-    #         if expected_type.is_model:
-    #             fields = dc_fields(expected_type.type)  # type: ignore
-    #             field_names = {f.name for f in fields}
-    #             required = {
-    #                 f.name
-    #                 for f in fields
-    #                 if f.default == MISSING and f.default_factory == MISSING
-    #             }
-    #             # Dataclasses don't support **kwargs in the standard sense unless
-    #             # custom __init__ is defined, so we stick to field names.
-    #             return required.issubset(data.keys()) and set(data.keys()).issubset(
-    #                 field_names
-    #             )
-    #
-    #         else:
-    #             sig = inspect.signature(expected_type.type)
-    #             params = sig.parameters
-    #
-    #             # Check for **kwargs
-    #             has_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
-    #
-    #             field_names = set(params.keys())
-    #             required = {
-    #                 n
-    #                 for n, p in params.items()
-    #                 if p.default == inspect.Parameter.empty
-    #                 and p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
-    #             }
-    #
-    #             # All required parameters MUST be in the dict.
-    #             if not required.issubset(data.keys()):
-    #                 return False
-    #
-    #             # If the class DOES NOT have **kwargs, keys must be a subset of field names.
-    #             # If the class DOES have **kwargs, any extra keys are allowed.
-    #             if not has_kwargs and not set(data.keys()).issubset(field_names):
-    #                 return False
-    #
-    #             return True
-    #
-    #     except (ValueError, TypeError):
-    #         return False
 
     def _instantiate_from_dict(
         self, _expected_type: _ExpectedType, data: typing.Dict[str, typing.Any]
