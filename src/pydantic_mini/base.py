@@ -317,15 +317,6 @@ class SchemaMeta(type):
             else:
                 ann_without_defaults[field_name] = annotation
 
-            # default_value = attrs.get(field_name, value)
-            # if not isinstance(default_value, Field):
-            #     if default_value is None:
-            #         default_value = field(default=default_value)
-            #     elif default_value is MISSING:
-            #         default_value = field()
-            #     else:
-            #         default_value = field(default=default_value)
-
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
             mini_field = MiniField(field_name, annotation, value_field)

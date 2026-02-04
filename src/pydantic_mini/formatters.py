@@ -9,7 +9,9 @@ try:
 except ImportError:
     from io import StringIO
 
-from .utils import init_class
+from .fields import _ExpectedTypeResolver, _ExpectedType
+
+# from .utils import init_class
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
@@ -53,7 +55,7 @@ class BaseModelFormatter(ABC):
     def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
         for subclass in cls.get_formatters():
             if subclass.is_format_name(format_name):
-                return subclass(**config)
+                return subclass(**config) # type: ignore
         raise KeyError(f"Format {format_name} not found")
 
 
@@ -63,9 +65,8 @@ class DictModelFormatter(BaseModelFormatter):
     def _encode(
         self, _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
     ) -> "BaseModel":
-        instance = init_class(_type, obj)
-        # force executes post-init again for normal field validation
-        # instance.__post_init__()
+        resolver = _ExpectedTypeResolver(actual_types=(_type,), strict_model=False)
+        instance = resolver.coerce(obj)
         return instance
 
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
