@@ -45,7 +45,6 @@ class UserNestedDC:
     profile: ProfileDC
 
 
-
 class ProfileMini(BaseModel):
     email: str
     age: int
@@ -62,4 +61,3 @@ class UserNestedMini(BaseModel):
     id: int
     name: str
     profile: ProfileMini
-

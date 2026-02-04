@@ -20,7 +20,7 @@ from .typing import (
     ValidatorType,
     PreFormatType,
 )
-from .fields import MiniField
+from .fields import MiniField, _ClassSignatureMatcher
 
 
 __all__ = ("BaseModel",)
@@ -59,7 +59,12 @@ class SchemaMeta(type):
             config.get_non_dataclass_config(),
         )
 
-        return dataclass(new_class, **config.get_dataclass_config())  # type: ignore
+        new_class = dataclass(new_class, **config.get_dataclass_config())  # type: ignore
+
+        matcher = _ClassSignatureMatcher(new_class)
+        setattr(new_class, "__signature_matcher__", matcher)
+
+        return new_class
 
     @classmethod
     def build_class_namespace(

@@ -55,7 +55,7 @@ class BaseModelFormatter(ABC):
     def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
         for subclass in cls.get_formatters():
             if subclass.is_format_name(format_name):
-                return subclass(**config) # type: ignore
+                return subclass(**config)  # type: ignore
         raise KeyError(f"Format {format_name} not found")
 
 

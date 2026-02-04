@@ -48,4 +48,7 @@ def test_memory_json(data):
     json_data = json.dumps(data)
 
     print("\nJSON parsing peak memory (bytes)")
-    print("pydantic-mini :", measure_peak(lambda: UserMini.loads(json_data, _format="json")))
+    print(
+        "pydantic-mini :",
+        measure_peak(lambda: UserMini.loads(json_data, _format="json")),
+    )

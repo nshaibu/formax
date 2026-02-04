@@ -25,6 +25,7 @@ def test_nested_dataclass(benchmark, nested_data):
         )
     )
 
+
 def test_nested_pydantic_mini(benchmark, nested_data):
     benchmark(lambda: UserNestedMini(**nested_data))
 
