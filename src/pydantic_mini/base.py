@@ -289,10 +289,10 @@ class SchemaMeta(type):
                         else:
                             actual_type = object
                     annotation = MiniAnnotated[actual_type, Attrib()]
+                    attrs[field_name] = MiniField(field_name, annotation, value_field)
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
-
-                attrs[field_name] = MiniField(field_name, annotation, value_field)
+                    attrs[field_name] = DisableAllValidationMiniField(field_name, annotation, value_field)
                 continue
 
             if not is_mini_annotated(annotation):
