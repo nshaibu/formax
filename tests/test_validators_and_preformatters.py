@@ -134,6 +134,6 @@ def test_cross_field_validation():
             if value <= self.min_val:
                 raise ValidationError("max must be > min")
 
-    Model(min_val=10, max_val=20)  # OK
+    Model(min_val=10, max_val=20)
     with pytest.raises(ValidationError):
         Model(min_val=20, max_val=10)

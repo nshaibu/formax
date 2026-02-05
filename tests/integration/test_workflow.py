@@ -13,6 +13,8 @@ def test_complete_workflow():
         @preformat(['priority'])
         def normalize_priority(self, value):
             if isinstance(value, str):
+                if "." in value:
+                    _, value = value.split(".")
                 return Priority[value.upper()]
             return value
 
@@ -32,6 +34,6 @@ def test_complete_workflow():
     json_data = task.dump(_format="json")
     print(json_data)
 
-    # loaded = Task.loads(json_data, _format="json")
-    # assert loaded.title == "Test"
-    # assert loaded.priority == Priority.LOW
+    loaded = Task.loads(json_data, _format="json")
+    assert loaded.title == "Test"
+    assert loaded.priority == Priority.LOW
