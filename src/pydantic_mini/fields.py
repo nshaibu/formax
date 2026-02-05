@@ -345,6 +345,7 @@ class MiniField:
         "forward_ref_type_name",
         "_default",
         "_default_factory",
+        "model_context"
     )
 
     def __init__(
@@ -392,6 +393,8 @@ class MiniField:
         for func in self._query._validators:
             if callable(func):
                 self._field_validators.add(func)
+
+        self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
 
         # Mirror dataclass Field internal state
         self._default = (
@@ -471,10 +474,26 @@ class MiniField:
         return value
 
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
+        if isinstance(value, MiniField):
+            value = value.get_default()
+            if value is MISSING:
+                raise AttributeError(
+                    "No value provided for field '{}'".format(self.name)
+                )
+
+        # get model configurations
         config = self.get_model_config(instance)
         strict_mode = config.get("strict_mode", False)
         disable_typecheck = config.get("disable_typecheck", False)
         disable_all_validation = config.get("disable_all_validation", False)
+
+        for preformat_callback in self._preformat_callbacks:
+            try:
+                value = preformat_callback(instance, value)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
+                ) from e
 
         if disable_all_validation:
             instance.__dict__[self.private_name] = value
@@ -486,21 +505,6 @@ class MiniField:
             self.inner_type.module_context = model_context
 
         self._finalise_type_resolver()
-
-        if isinstance(value, MiniField):
-            value = value.get_default()
-            if value is MISSING:
-                raise AttributeError(
-                    "No value provided for field '{}'".format(self.name)
-                )
-
-        for preformat_callback in self._preformat_callbacks:
-            try:
-                value = preformat_callback(instance, value)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
-                ) from e
 
         # if not disable_all_validation:
         # no type validation for Any field type and type checking is not disabled

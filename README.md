@@ -214,6 +214,35 @@ class User(BaseModel):
 
 Define custom validation functions:
 
+### Validator Function Signature
+
+All validators must follow this signature:
+
+```python
+@validator(['field_name', ...])
+def validator_name(instance, value):
+    """
+    Args:
+        value: The field value being validated
+        instance: The model instance being created (access other fields)
+    
+    Raises:
+        ValidationError: If validation fails
+    """
+    # Validation logic here
+
+```
+
+**Key points:**
+- First parameter is an instance of the model
+- `value` is the current field's value
+- `instance` provides access to other fields for cross-field validation
+- Raise `ValidationError` to fail validation
+
+### Using Validators in Attrib
+
+You can pass validator functions directly to `Attrib`:
+
 ```python
 from pydantic_mini.exceptions import ValidationError
 
@@ -228,46 +257,302 @@ class Employee(BaseModel):
 
 ### Method-based Validators
 
-Define validators as methods with the pattern `validate_<field_name>`:
+The `@validator` decorator allows you to define custom validation logic for one or more fields.
 
 ```python
+from pydantic_mini.decorators import validator
+from pydantic_mini.exceptions import ValidationError
+
 class School(BaseModel):
     name: str
     students_count: int
     
-    def validate_name(self, value, field):
+    @validator(["name"])
+    def validate_name(self, value):
         if len(value) > 50:
             raise ValidationError("School name too long")
-        return value
     
-    def validate_students_count(self, value, field):
+    @validator(["students_count"])    
+    def validate_students_count(self, value):
         if value < 0:
             raise ValidationError("Students count cannot be negative")
-        return value
 ```
 
-### Global Validators
+#### Global Validators
 
 Apply validation rules to all fields:
 
 ```python
+from pydantic_mini.decorators import validator
+from pydantic_mini.exceptions import ValidationError
+
 class StrictModel(BaseModel):
     field1: str
     field2: str
     field3: str
     
+    @validator(["field1", "field2", "field3"])
     def validate(self, value, field):
         if isinstance(value, str) and len(value) > 100:
             raise ValidationError(f"Field {field.name} is too long")
-        return value
 ```
 
-### Validator Notes
+#### Multi-Field Validators
 
-- **Transformation**: Validators can transform values by returning the modified value
-- **Error Handling**: Validators must raise `ValidationError` when validation fails
-- **Type Enforcement**: Type annotation constraints are enforced at runtime
-- **Pre-formatting**: Use validators for formatting values before type checking
+You can apply the same validator to multiple fields by passing multiple field names:
+
+```python
+from pydantic_mini import BaseModel, validator
+from pydantic_mini.exceptions import ValidationError
+
+class School(BaseModel):
+    name: str
+    location: str
+    students_count: int
+    
+    @validator(['name', 'location'])
+    def validate_string_fields(self, value):
+        """Ensure string fields are not too long."""
+        if len(value) > 50:
+            raise ValidationError("Field value is too long (max 50 characters)")
+    
+    @validator(['students_count'])
+    def validate_students_count(self, value):
+        """Ensure student count is positive."""
+        if value < 0:
+            raise ValidationError("Students count cannot be negative")
+
+# Usage
+school = School(name="KNUST", location="Kumasi", students_count=5000)
+```
+
+#### Cross-Field Validation
+
+Validators can access other fields through the `instance` parameter for cross-field validation:
+
+```python
+from pydantic_mini import BaseModel, validator
+from pydantic_mini.exceptions import ValidationError
+
+class PasswordModel(BaseModel):
+    password: str
+    confirm_password: str
+    
+    @validator(['confirm_password'])
+    def passwords_match(self, value):
+        """Ensure password and confirm_password match."""
+        if value != self.password:
+            raise ValidationError("Passwords do not match")
+        return value
+
+# Usage
+valid = PasswordModel(password="secret123", confirm_password="secret123")
+
+try:
+    invalid = PasswordModel(password="secret123", confirm_password="different")
+except ValidationError as e:
+    print(f"Validation failed: {e}")
+```
+
+#### Validator with Built-in Constraints
+
+Combine `@validator` with `Attrib` constraints:
+
+```python
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator
+from pydantic_mini.exceptions import ValidationError
+
+class RangeModel(BaseModel):
+    min_value: MiniAnnotated[int, Attrib(ge=0)]
+    max_value: MiniAnnotated[int, Attrib(ge=0)]
+    
+    @validator(['max_value'])
+    def validate_max_greater_than_min(self, value):
+        """Ensure max_value is greater than min_value."""
+        if value <= self.min_value:
+            raise ValidationError("max_value must be greater than min_value")
+
+# Usage
+valid = RangeModel(min_value=10, max_value=20)
+
+try:
+    invalid = RangeModel(min_value=20, max_value=10)
+except ValidationError as e:
+    print(f"Validation failed: {e}")
+```
+
+### Validator Execution Order
+
+Understanding the order of validation operations is important:
+
+1. **Preformatters** - Transform raw input values (e.g., string → enum)
+2. **Type Validation** - Check if value matches field type annotation
+3. **Built-in Validators** - Apply `Attrib` constraints (max_length, gt, pattern, etc.)
+4. **Custom Validators** - Apply `@validator` decorated methods
+
+```python
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from pydantic_mini.exceptions import ValidationError
+from enum import Enum
+
+class Priority(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+class Task(BaseModel):
+    title: MiniAnnotated[str, Attrib(max_length=100)]
+    priority: Priority
+    
+    @preformat(['priority'])
+    def normalize_priority(self, value):
+        """Step 1: Convert string to enum."""
+        if isinstance(value, str):
+            return Priority[value.upper()]
+        return value
+    
+    @validator(['title'])
+    def validate_title(self, value):
+        """Step 4: Custom validation after type and built-in checks."""
+        if value.lower().startswith("urgent"):
+            self.priority = Priority.HIGH  # Can modify other fields
+
+# Execution order:
+# 1. preformat('priority'): "low" → Priority.LOW
+# 2. Type check: Priority.LOW is Priority ✓
+# 3. Built-in validator: len(title) <= 100 ✓
+# 4. @validator('title'): custom logic
+```
+
+### Complex Validation Example
+
+Here's a comprehensive example demonstrating multiple validation techniques:
+
+```python
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from pydantic_mini.exceptions import ValidationError
+from enum import Enum
+import re
+
+class UserRole(Enum):
+    ADMIN = "admin"
+    USER = "user"
+    GUEST = "guest"
+
+class User(BaseModel):
+    username: MiniAnnotated[str, Attrib(max_length=30)]
+    email: MiniAnnotated[str, Attrib(pattern=r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")]
+    password: str
+    age: MiniAnnotated[int, Attrib(gt=13, default=18)]
+    role: UserRole
+    
+    @preformat(['role'])
+    def normalize_role(self, value):
+        if isinstance(value, str):
+            return UserRole[value.upper()]
+    
+    @validator(['username'])
+    def validate_username(self, value):
+        if not re.match(r"^[a-zA-Z0-9_]+$", value):
+            raise ValidationError("Username can only contain letters, numbers, and underscores")
+    
+    @validator(['password'])
+    def validate_password(self, value):
+        if len(value) < 8:
+            raise ValidationError("Password must be at least 8 characters long")
+        if not re.search(r"[A-Z]", value):
+            raise ValidationError("Password must contain at least one uppercase letter")
+        if not re.search(r"[a-z]", value):
+            raise ValidationError("Password must contain at least one lowercase letter")
+        if not re.search(r"\d", value):
+            raise ValidationError("Password must contain at least one digit")
+    
+    @validator(['age'])
+    def validate_age(self, value):
+        if value > 120:
+            raise ValidationError("Age seems unrealistic")
+    
+    @validator(['role'])
+    def validate_admin_age(self, value):
+        if value == UserRole.ADMIN and self.age < 18:
+            raise ValidationError("Admin users must be at least 18 years old")
+
+# Usage
+try:
+    user = User(
+        username="JohnDoe123",
+        email="john@example.com",
+        password="SecurePass123",
+        age=25,
+        role="ADMIN"
+    )
+    print(f"Created user: {user.username}")
+except ValidationError as e:
+    print(f"Validation failed: {e}")
+```
+
+### Validation Best Practices
+
+1. **Single Responsibility**: Each validator should check one thing
+   ```python
+   # Good - separate validators
+   @validator(['email'])
+   def validate_email_format(instance, value):
+       # Check format only
+       pass
+   
+   @validator(['email'])
+   def validate_email_unique(instance, value):
+       # Check uniqueness only
+       pass
+   ```
+
+2. **Clear Error Messages**: Be specific about what failed
+   ```python
+   @validator(['age'])
+   def validate_age(self, value):
+       if value < 0:
+           raise ValidationError("Age cannot be negative")
+       if value > 150:
+           raise ValidationError("Age cannot exceed 150 years")
+   ```
+
+3. **Transform in Preformatters**: Use `@preformat` for data transformation before validation
+   ```python
+   @preformat(['status'])
+   def normalize_status(self, value):
+       return value.upper() if isinstance(value, str) else value
+   
+   @validator(['status'])
+   def validate_status(instance, value):
+       # Validate the already-normalized value
+       pass
+   ```
+
+4. **Use Built-in Constraints First**: Prefer `Attrib` constraints over custom validators when possible
+   ```python
+   # Preferred
+   age: MiniAnnotated[int, Attrib(gt=0, lt=150)]
+   
+   # Less preferred (but sometimes necessary for complex logic)
+   @validator(['age'])
+   def validate_age(instance, value):
+       if not (0 < value < 150):
+           raise ValidationError("Age must be between 0 and 150")
+   ```
+
+5. **Cross-Field Validation Order**: Be aware of field order when using cross-field validation
+   ```python
+   class Model(BaseModel):
+       field_a: int
+       field_b: int
+       
+       @validator(['field_b'])
+       def validate_b(self, value):
+           # instance.field_a is available because field_a is defined before field_b
+           if value <= self.field_a:
+               raise ValidationError("field_b must be greater than field_a")
+   ```
 
 ## Nested Validation
 
@@ -289,7 +574,49 @@ class Person(BaseModel):
     school: School
 ```
 
-### Instantiation Methods
+Validators work seamlessly with nested models:
+
+```python
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from pydantic_mini.exceptions import ValidationError
+
+class Address(BaseModel):
+    street: str
+    city: str
+    postal_code: MiniAnnotated[str, Attrib(pattern=r"^\d{5}$")]
+    
+    @preformat(['city'])
+    def format_city(self, value):
+        """Ensure city name is capitalized."""
+        return value.title()
+
+class Person(BaseModel):
+    name: str
+    age: MiniAnnotated[int, Attrib(gt=0)]
+    address: Address
+    
+    @validator(['name'])
+    def validate_name(self, value):
+        """Ensure name is not empty."""
+        if not value.strip():
+            raise ValidationError("Name cannot be empty")
+
+# Nested validation happens automatically
+person = Person(
+    name="john doe",
+    age=30,
+    address={
+        "street": "123 Main St",
+        "city": "new york",
+        "postal_code": "10001"
+    }
+)
+
+print(person.name)  # Output: john doe
+print(person.address.city)  # Output: New York (validated and transformed)
+```
+
+#### Instantiation Methods
 
 You can instantiate nested models in two ways:
 
@@ -320,15 +647,15 @@ print(type(person.school))  # Output: <class 'School'>
 
 When a dictionary is provided for a nested `BaseModel` field, pydantic-mini automatically:
 1. Detects that the field type is a `BaseModel` subclass
-2. Converts the dictionary to an instance of that class
+2. Convert the dictionary to an instance of that class
 3. Applies all validation rules defined in the nested class
 
-### Validation Propagation
+#### Validation Propagation
 
 All validation rules defined in nested models are fully enforced:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator
 from pydantic_mini.exceptions import ValidationError
 
 class School(BaseModel):
@@ -336,10 +663,10 @@ class School(BaseModel):
     location: str
     student_count: MiniAnnotated[int, Attrib(gt=0)]
     
+    @validator(["name"])
     def validate_name(self, value, field):
         if len(value) < 3:
             raise ValidationError("School name must be at least 3 characters")
-        return value
 
 class Person(BaseModel):
     name: MiniAnnotated[str, Attrib(max_length=30)]
@@ -365,7 +692,7 @@ except ValidationError as e:
     # Errors: School name too short, student_count not greater than 0
 ```
 
-### Multi-Level Nesting
+#### Multi-Level Nesting
 
 You can nest models at multiple levels, and validation will propagate through all levels:
 
@@ -401,7 +728,7 @@ person = Person(
 print(person.school.address.city)  # Output: Kumasi
 ```
 
-### Lists of Nested Models
+#### Lists of Nested Models
 
 You can also have collections of nested models:
 
@@ -432,7 +759,7 @@ for course in student.courses:
     print(f"{course.code}: {course.title} ({course.credits} credits)")
 ```
 
-### Non-BaseModel Nested Classes
+#### Non-BaseModel Nested Classes
 
 **Important**: Nested validation only works for `BaseModel` subclasses. If you use a regular Python class or standard dataclass, only the class instance itself is validated, **not** the fields within it.
 
