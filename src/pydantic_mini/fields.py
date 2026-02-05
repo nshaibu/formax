@@ -675,16 +675,16 @@ class MiniField(_MiniFieldBase):
         return None
 
     def _field_type_validator(self, value: typing.Any, instance: "BaseModel") -> None:
-        if not self._query.has_default() and value is None:
-            raise ValidationError(
-                "Field '{}' cannot be empty.".format(self.name),
-                params={"field": self.name, "annotation": self._mini_annotated_type},
-            )
+        # if not self._query.has_default() and value is None:
+        #     raise ValidationError(
+        #         "Field '{}' cannot be empty.".format(self.name),
+        #         params={"field": self.name, "annotation": self._mini_annotated_type},
+        #     )
 
         # self._query.execute_field_validators(value, instance)
 
-        if self._actual_annotated_type and typing.Any not in self.type_annotation_args:
-            if self.is_collection:
+        # if self._actual_annotated_type and typing.Any not in self.type_annotation_args:
+        if self.is_collection:
                 inner_type: type = self._inner_type_args[0]
                 if inner_type and inner_type is not typing.Any:
                     inner_type = self.resolve_actual_type(
@@ -697,7 +697,7 @@ class MiniField(_MiniFieldBase):
                                 inner_type, value
                             )
                         )
-            elif not self.expected_type.validate(value):
+        elif not self.expected_type.validate(value):
                 raise TypeError(
                     f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
                     f"but got {type(value).__name__}."
