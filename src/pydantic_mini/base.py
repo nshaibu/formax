@@ -20,12 +20,44 @@ from .typing import (
     ValidatorType,
     PreFormatType,
 )
+from .exceptions import ValidationError
 from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
 
 
 __all__ = ("BaseModel",)
 
 PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
+
+
+def compile_callbacks(
+    callbacks: typing.List[typing.Union[PreFormatType, ValidatorType]],
+    name: str,
+    field_name: str,
+    callback_type: typing.Literal["validate", "preformat"],
+) -> typing.Union[PreFormatType, ValidatorType]:
+    lines = [f"def {name}_{callback_type}(instance, value):"]
+
+    if callback_type == "validate":
+        for i, cb in enumerate(callbacks):
+            lines.append(f"    if _cb{i}(instance, value) is False:")
+            lines.append(
+                f"        raise ValidationError('Validation of field {field_name} failed.')"
+            )
+        lines.append("    return None")
+    else:
+        for i, cb in enumerate(callbacks):
+            lines.append(f"    value = _cb{i}(instance, value)")
+        lines.append("    return value")
+
+    code = "\n".join(lines)
+
+    global_ns = {f"_cb{i}": cb for i, cb in enumerate(callbacks)}
+    global_ns["ValidationError"] = ValidationError
+    local_ns = {}
+
+    exec(code, global_ns, local_ns)
+
+    return local_ns[f"{name}_{callback_type}"]
 
 
 class SchemaMeta(type):
@@ -330,7 +362,7 @@ class SchemaMeta(type):
                 ]
 
             annotation_type = annotation.__args__[0]
-            attrib = annotation.__metadata__[0]
+            attrib: Attrib = annotation.__metadata__[0]
 
             if is_optional_type(annotation_type):
                 # all optional annotations without default value will have
@@ -353,6 +385,12 @@ class SchemaMeta(type):
             else:
                 ann_without_defaults[field_name] = annotation
 
+            if attrib.has_pre_formatter():
+                preformatters.setdefault(field_name, []).append(attrib.pre_formatter)
+
+            if attrib.has_validators():
+                validators.setdefault(field_name, []).extend(attrib.validators)
+
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
             if disable_all_validation:
@@ -368,12 +406,16 @@ class SchemaMeta(type):
                 )
 
                 if field_name in validators:
-                    for validator_func in validators[field_name]:
-                        mini_field.add_validator(validator_func)
+                    # for validator_func in validators[field_name]:
+                    #     mini_field.add_validator(validator_func)
+                    compiled_validator: ValidatorType = compile_callbacks(validators[field_name], "field", field_name, "validate")
+                    mini_field.set_validator(compiled_validator)
 
                 if field_name in preformatters:
-                    for preformat_func in preformatters[field_name]:
-                        mini_field.add_preformat_callback(preformat_func)
+                    # for preformat_func in preformatters[field_name]:
+                    #     mini_field.add_preformat_callback(preformat_func)
+                    compiled_preformat_callback: PreFormatType = compile_callbacks(preformatters[field_name], "field", field_name, "preformat")
+                    mini_field.set_preformat_callback(compiled_preformat_callback)
 
             attrs[field_name] = mini_field
 

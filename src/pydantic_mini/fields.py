@@ -355,8 +355,8 @@ class _MiniFieldBase:
         "_query",
         "_default",
         "_default_factory",
-        "_field_validators",
-        "_preformat_callbacks",
+        "_field_validator",
+        "_preformat_callback",
         "model_context",
         "disable_type_check",
     )
@@ -381,16 +381,16 @@ class _MiniFieldBase:
         self._actual_annotated_type = mini_annotated.__args__[0]
         self._query: Attrib = mini_annotated.__metadata__[0]
 
-        self._field_validators: typing.Set[ValidatorType] = set()
-        self._preformat_callbacks: typing.Set[PreFormatType] = set()
+        self._field_validator: typing.Optional[ValidatorType] = None
+        self._preformat_callback: typing.Optional[PreFormatType] = None
 
-        if self._query.pre_formatter is not MISSING:
-            if callable(self._query.pre_formatter):
-                self._preformat_callbacks.add(self._query.pre_formatter)
-
-        for func in self._query._validators:
-            if callable(func):
-                self._field_validators.add(func)
+        # if self._query.pre_formatter is not MISSING:
+        #     if callable(self._query.pre_formatter):
+        #         self._preformat_callbacks.add(self._query.pre_formatter)
+        #
+        # for func in self._query._validators:
+        #     if callable(func):
+        #         self._field_validators.add(func)
 
         self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
         self.disable_type_check = disable_type_check
@@ -427,12 +427,12 @@ class _MiniFieldBase:
         return value
 
     def run_preformatters(self, instance: "BaseModel", value: typing.Any) -> typing.Any:
-        for preformat_callback in self._preformat_callbacks:
+        if self._preformat_callback:
             try:
-                value = preformat_callback(instance, value)
+                value = self._preformat_callback(instance, value)
             except Exception as e:
                 raise RuntimeError(
-                    f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
+                    f"Preprocessor failed to process value '{value}'"
                 ) from e
 
         return value
@@ -464,8 +464,15 @@ class _MiniFieldBase:
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         raise NotImplementedError
 
+    def set_validator(self, func: ValidatorType) -> None:
+        self._field_validator = func
+
+    def set_preformat_callback(self, func: PreFormatType) -> None:
+        self._preformat_callback = func
+
 
 class DisableAllValidationMiniField(_MiniFieldBase):
+    __slots__ = ()
 
     # NOTED: Removed all type introspections and validators since all validations are disabled
     def __init__(
@@ -480,12 +487,12 @@ class DisableAllValidationMiniField(_MiniFieldBase):
 
         self._query: Attrib = mini_annotated.__metadata__[0]
 
-        self._field_validators: typing.Set[ValidatorType] = set()
-        self._preformat_callbacks: typing.Set[PreFormatType] = set()
+        self._field_validator: typing.Optional[ValidatorType] = None
+        self._preformat_callback: typing.Optional[PreFormatType] = None
 
-        if self._query.pre_formatter is not MISSING:
-            if callable(self._query.pre_formatter):
-                self._preformat_callbacks.add(self._query.pre_formatter)
+        # if self._query.pre_formatter is not MISSING:
+        #     if callable(self._query.pre_formatter):
+        #         self._preformat_callbacks.add(self._query.pre_formatter)
 
         self._default = (
             self._query.default
@@ -618,22 +625,22 @@ class MiniField(_MiniFieldBase):
             self._field_type_validator(value, instance)
         else:
             # run other field validators when type checking is disabled
-            self._query.execute_field_validators(value, instance)
+            # self._query.execute_field_validators(value, instance)
             self._query.validate(value, self.name)
 
-        try:
-            for validator in self._field_validators:
-                status = validator(instance, value)
-                if status is False:
-                    raise ValidationError(
-                        "Validation of field '{}' with value '{}' failed.".format(
-                            self.name, value
+        if self._field_validator:
+            try:
+                    status = self._field_validator(instance, value)
+                    if status is False:
+                        raise ValidationError(
+                            "Validation of field '{}' with value '{}' failed.".format(
+                                self.name, value
+                            )
                         )
-                    )
-        except Exception as e:
-            if isinstance(e, ValidationError):
-                raise
-            raise ValidationError("Validation error") from e
+            except Exception as e:
+                if isinstance(e, ValidationError):
+                    raise
+                raise ValidationError("Validation error") from e
 
         instance.__dict__[self.private_name] = value
         return None
@@ -674,7 +681,7 @@ class MiniField(_MiniFieldBase):
                 params={"field": self.name, "annotation": self._mini_annotated_type},
             )
 
-        self._query.execute_field_validators(value, instance)
+        # self._query.execute_field_validators(value, instance)
 
         if self._actual_annotated_type and typing.Any not in self.type_annotation_args:
             if self.is_collection:
@@ -749,19 +756,3 @@ class MiniField(_MiniFieldBase):
             )
 
         return None
-
-    def has_validator(self, func: ValidatorType) -> bool:
-        return func in self._field_validators
-
-    def has_preformat_callback(self, func: PreFormatType) -> bool:
-        return func in self._preformat_callbacks
-
-    def add_validator(self, func: ValidatorType) -> None:
-        if not callable(func):
-            raise TypeError("Validator '{}' is not callable.".format(func))
-        self._field_validators.add(func)
-
-    def add_preformat_callback(self, func: PreFormatType) -> None:
-        if not callable(func):
-            raise TypeError("PreFormat callback '{}' is not callable.".format(func))
-        self._preformat_callbacks.add(func)

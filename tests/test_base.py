@@ -304,7 +304,7 @@ class TestBase(unittest.TestCase):
         self.assertEqual(person.name, "NAFIU")
         self.assertEqual(person.school_name, "KNUST")
 
-    def test_model_custom_field_validators_can_transform_field_value(self):
+    def test_model_custom_field_preformatter_can_coerce_field_value(self):
         def format_school_name(instance, value):
             return value.upper()
 

@@ -231,11 +231,18 @@ class Attrib:
             ")"
         )
 
+    @property
+    def validators(self) -> typing.List[ValidatorType]:
+        return self._validators
+
     def has_default(self):
         return self.default is not MISSING or self.default_factory is not MISSING
 
     def has_pre_formatter(self):
         return self.pre_formatter is not None and callable(self.pre_formatter)
+
+    def has_validators(self):
+        return len(self._validators) > 0
 
     def _get_default(self) -> typing.Any:
         if self.default is not MISSING:
@@ -268,14 +275,14 @@ class Attrib:
             validator(value)
         return True
 
-    def execute_field_validators(self, value: typing, instance: "BaseModel") -> None:
-        for validator in self._validators:
-            try:
-                validator(instance, value)
-            except Exception as e:
-                if isinstance(e, ValidationError):
-                    raise
-                raise ValidationError(str(e)) from e
+    # def execute_field_validators(self, value: typing, instance: "BaseModel") -> None:
+    #     for validator in self._validators:
+    #         try:
+    #             validator(instance, value)
+    #         except Exception as e:
+    #             if isinstance(e, ValidationError):
+    #                 raise
+    #             raise ValidationError(str(e)) from e
 
     def _validate_gt(self, value: typing.Any):
         try:
