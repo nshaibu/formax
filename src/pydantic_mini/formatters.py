@@ -9,9 +9,7 @@ try:
 except ImportError:
     from io import StringIO
 
-from .fields import _ExpectedTypeResolver, _ExpectedType
-
-# from .utils import init_class
+from .fields import _ExpectedTypeResolver
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel

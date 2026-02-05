@@ -682,22 +682,6 @@ class MiniField(_MiniFieldBase):
 
         self._query.validate(value, self.name)
 
-    def resolve_actual_type(
-        self,
-        typ: typing.Type[typing.Any],
-        globalns: typing.Dict[str, typing.Any],
-        localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
-    ) -> typing.Type[typing.Any]:
-        if self.forward_ref_type_name:
-            typ = typing.cast(typing.ForwardRef, typ)
-            typ_temp = resolve_and_cache_forward_ref(
-                typ, globalns=globalns, localns=localns
-            )
-            if typ_temp is None:
-                return get_type(typ, globalns=globalns, localns=localns)
-            return typ_temp
-        return get_type(typ, globalns=globalns, localns=localns)
-
     def type_can_be_validated(
         self,
         typ,
