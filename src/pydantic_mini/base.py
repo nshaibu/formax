@@ -20,14 +20,12 @@ from .typing import (
     ValidatorType,
     PreFormatType,
 )
-from .fields import MiniField, _ClassSignatureMatcher
+from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
 
 
 __all__ = ("BaseModel",)
 
 PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
-
-_RESOLVED_TYPE_CACHE = {}
 
 
 class SchemaMeta(type):
@@ -45,13 +43,10 @@ class SchemaMeta(type):
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
 
-        cls._prepare_model_fields(new_attrs, validators, preformatters)
+        config = cls._prepare_model_fields(new_attrs, validators, preformatters)
 
         new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
 
-        model_config_class: typing.Type = getattr(new_class, "Config", None)
-
-        config = ModelConfigWrapper(model_config_class)
         non_dataclass_config: typing.Dict[str, typing.Any] = (
             config.get_non_dataclass_config()
         )
@@ -61,13 +56,15 @@ class SchemaMeta(type):
         new_class = dataclass(new_class, **config.get_dataclass_config())  # type: ignore
 
         # Let's activate the fields for type checking
-        for field_name in new_attrs.get("__annotations__", {}):
-            mini_field = new_attrs.get(field_name, None)
-            if isinstance(mini_field, MiniField):
-                # Initialise type expectations with the fully realised class
-                mini_field._init_type_expectations(
-                    new_class, non_dataclass_config["strict_mode"], False
-                )
+        if not non_dataclass_config["disable_all_validation"]:
+
+            for field_name in new_attrs.get("__annotations__", {}):
+                mini_field = new_attrs.get(field_name, None)
+                if isinstance(mini_field, MiniField):
+                    # Initialise type expectations with the fully realised class
+                    mini_field._init_type_expectations(
+                        new_class, non_dataclass_config["strict_mode"], False
+                    )
 
         matcher = _ClassSignatureMatcher(new_class)
         setattr(new_class, "__signature_matcher__", matcher)
@@ -241,9 +238,14 @@ class SchemaMeta(type):
         attrs: typing.Dict[str, typing.Any],
         validators: typing.Dict[str, typing.List[ValidatorType]],
         preformatters: typing.Dict[str, typing.List[PreFormatType]],
-    ) -> None:
+    ) -> ModelConfigWrapper:
         ann_with_defaults = OrderedDict()
         ann_without_defaults = OrderedDict()
+
+        model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
+        config = ModelConfigWrapper(model_config_class)
+
+        _disable_all_validation = config.get_non_dataclass_config().get("disable_all_validation", False)
 
         for field_name, annotation, value in cls.get_fields(attrs):
             if not isinstance(field_name, str) or not field_name.isidentifier():
@@ -332,15 +334,18 @@ class SchemaMeta(type):
 
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
-            mini_field = MiniField(field_name, annotation, value_field)
+            if _disable_all_validation:
+                mini_field = DisableAllValidationMiniField(field_name, annotation, value_field)
+            else:
+                mini_field = MiniField(field_name, annotation, value_field)
 
-            if field_name in validators:
-                for validator_func in validators[field_name]:
-                    mini_field.add_validator(validator_func)
+                if field_name in validators:
+                    for validator_func in validators[field_name]:
+                        mini_field.add_validator(validator_func)
 
-            if field_name in preformatters:
-                for preformat_func in preformatters[field_name]:
-                    mini_field.add_preformat_callback(preformat_func)
+                if field_name in preformatters:
+                    for preformat_func in preformatters[field_name]:
+                        mini_field.add_preformat_callback(preformat_func)
 
             attrs[field_name] = mini_field
 
@@ -348,6 +353,8 @@ class SchemaMeta(type):
 
         if ann_without_defaults:
             attrs["__annotations__"] = ann_without_defaults
+
+        return config
 
 
 class PreventOverridingMixin:

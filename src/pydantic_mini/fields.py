@@ -4,6 +4,8 @@ from enum import Enum
 from dataclasses import fields as dc_fields, Field, MISSING, is_dataclass
 from typing import ForwardRef
 
+from typing_extensions import override
+
 from .typing import (
     is_mini_annotated,
     get_type,
@@ -216,18 +218,27 @@ class _ExpectedType:
 
 
 class _ExpectedTypeResolver:
-    __slots__ = ("_actual_types", "_strict_model", "module_context", "_finalised")
+    __slots__ = (
+        "_actual_types",
+        "_strict_model",
+        "_disable_type_check",
+        "module_context",
+        "_finalised",
+    )
 
     def __init__(
         self,
         actual_types: typing.Tuple[type],
         strict_model: bool = False,
+        disable_type_check: bool = False,
         forward_refs_as_any: bool = False,
     ) -> None:
         """
         Validate and coerce datatype
         :param actual_types: Tuple of types to validate
         :param strict_model: Validation model
+        :param disable_type_check: Whether to disable type check
+        :param forward_refs_as_any: Whether to force forward refs
         """
         if not actual_types:
             raise TypeError("No types were provided")
@@ -248,6 +259,7 @@ class _ExpectedTypeResolver:
         self._actual_types = sorted(self._actual_types, key=lambda t: t.order)
 
         self._strict_model: bool = strict_model
+        self._disable_type_check = disable_type_check
 
         self.module_context: typing.Dict[str, typing.Any] = {}
 
@@ -327,24 +339,18 @@ class _ExpectedTypeResolver:
         return _expected_type(**data)
 
 
-class MiniField:
+class _MiniFieldBase:
 
     __slots__ = (
         "name",
         "private_name",
-        "expected_type",
-        "inner_type",
-        "_field_validators",
-        "_preformat_callbacks",
         "_mini_annotated_type",
         "_actual_annotated_type",
-        "_inner_type_args",
         "_query",
-        "type_annotation_args",
-        "is_collection",
-        "forward_ref_type_name",
         "_default",
         "_default_factory",
+        "_field_validators",
+        "_preformat_callbacks",
         "model_context",
     )
 
@@ -366,22 +372,6 @@ class MiniField:
         self._mini_annotated_type = mini_annotated
         self._actual_annotated_type = mini_annotated.__args__[0]
         self._query: Attrib = mini_annotated.__metadata__[0]
-        self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
-            self.type_can_be_validated(
-                self._actual_annotated_type, resolve_forward_ref=False
-            )
-        )
-
-        self._inner_type_args = get_args(self._actual_annotated_type)
-
-        self.is_collection, _ = is_collection(self._actual_annotated_type)
-
-        self.expected_type: typing.Optional[_ExpectedTypeResolver] = None
-        self.inner_type: typing.Optional[_ExpectedTypeResolver] = None
-
-        self.forward_ref_type_name: typing.Optional[str] = get_forward_type(
-            self._actual_annotated_type
-        )
 
         self._field_validators: typing.Set[ValidatorType] = set()
         self._preformat_callbacks: typing.Set[PreFormatType] = set()
@@ -396,7 +386,7 @@ class MiniField:
 
         self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
 
-        # Mirror dataclass Field internal state
+        # default value handler
         self._default = (
             self._query.default
             if self._query.default is MISSING
@@ -414,6 +404,87 @@ class MiniField:
         elif self._default_factory is not MISSING:
             return self._default_factory()
         return MISSING
+
+    def processor_default_value(self, value: typing.Any) -> typing.Any:
+        if isinstance(value, MiniField):
+            value = value.get_default()
+            if value is MISSING:
+                raise AttributeError(
+                    "No value provided for field '{}'".format(self.name)
+                )
+        return value
+
+    def _init_type_expectations(
+        self,
+        instance: "BaseModel",
+        strict_status: bool,
+        resolve_forward_ref: bool = True,
+    ):
+        raise NotImplementedError
+
+    def __get__(self, instance: "BaseModel", owner: typing.Any = None) -> typing.Any:
+        if instance is None:
+            return self
+
+        value = instance.__dict__.get(self.private_name, self.get_default())
+
+        if value is MISSING:
+            raise AttributeError(
+                f"'{owner.__name__}' object has no attribute '{self.name}'"
+            )
+
+        # Cache the default back to the instance
+        instance.__dict__[self.private_name] = value
+
+        return value
+
+    def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
+        raise NotImplementedError
+
+
+class DisableAllValidationMiniField(_MiniFieldBase):
+
+    def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
+        value = self.processor_default_value(value)
+        instance.__dict__[self.private_name] = value
+        return value
+
+
+class MiniField(_MiniFieldBase):
+
+    __slots__ = (
+        "expected_type",
+        "inner_type",
+        "_inner_type_args",
+        "type_annotation_args",
+        "is_collection",
+        "forward_ref_type_name",
+    )
+
+    def __init__(
+        self,
+        name: str,
+        mini_annotated: Annotated,
+        dc_field_obj: typing.Optional[Field] = None,
+    ):
+        super().__init__(name, mini_annotated, dc_field_obj)
+
+        self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
+            self.type_can_be_validated(
+                self._actual_annotated_type, resolve_forward_ref=False
+            )
+        )
+
+        self._inner_type_args = get_args(self._actual_annotated_type)
+
+        self.is_collection, _ = is_collection(self._actual_annotated_type)
+
+        self.expected_type: typing.Optional[_ExpectedTypeResolver] = None
+        self.inner_type: typing.Optional[_ExpectedTypeResolver] = None
+
+        self.forward_ref_type_name: typing.Optional[str] = get_forward_type(
+            self._actual_annotated_type
+        )
 
     def _init_type_expectations(
         self,
@@ -459,29 +530,8 @@ class MiniField:
         if self.inner_type:
             self.inner_type.finalize()
 
-    def __get__(self, instance: "BaseModel", owner: typing.Any = None) -> typing.Any:
-        if instance is None:
-            return self
-
-        value = instance.__dict__.get(self.private_name, self.get_default())
-
-        if value is MISSING:
-            raise AttributeError(
-                f"'{owner.__name__}' object has no attribute '{self.name}'"
-            )
-
-        # Cache the default back to the instance
-        instance.__dict__[self.private_name] = value
-
-        return value
-
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
-        if isinstance(value, MiniField):
-            value = value.get_default()
-            if value is MISSING:
-                raise AttributeError(
-                    "No value provided for field '{}'".format(self.name)
-                )
+        value = self.processor_default_value(value)
 
         # get model configurations
         config = self.get_model_config(instance)
@@ -497,6 +547,7 @@ class MiniField:
                     f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
                 ) from e
 
+        # TODO: remove after integrating descriptor
         if disable_all_validation:
             instance.__dict__[self.private_name] = value
             return None
