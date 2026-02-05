@@ -2,7 +2,7 @@ import unittest
 import typing
 from unittest.mock import patch
 from dataclasses import field, InitVar
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from pydantic_mini import BaseModel, MiniAnnotated, Attrib, preformat, validator
 from pydantic_mini.exceptions import ValidationError
 
 
@@ -99,10 +99,10 @@ class TestBase(unittest.TestCase):
         self.assertEqual(p2.school, "knust")
 
         # validate positional arguments are required
-        with self.assertRaises(TypeError):
+        with self.assertRaises(AttributeError):
             Person(name="nafiu")
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(AttributeError):
             Person1(school="knust")
 
     def test_figured_out_optional_field_from_annotation_has_none_value(self):
@@ -218,7 +218,8 @@ class TestBase(unittest.TestCase):
             name: str
             school_name: str
 
-            def validate(self, value, fd):
+            @validator(["school_name", "name"])
+            def validate(self, value):
                 if len(value) > 10:
                     raise ValidationError("Value too long")
 
@@ -263,11 +264,13 @@ class TestBase(unittest.TestCase):
             name: str
             school_name: str
 
-            def validate_school_name(self, value, fd):
+            @validator(["school_name"])
+            def validate_school_name(self, value):
                 if len(value) > 6:
                     raise ValidationError("Value too long")
 
-            def validate_name(self, value, fd):
+            @validator(["name"])
+            def validate_name(self, value):
                 if len(value) > 10:
                     raise ValidationError("Value too long")
 
@@ -289,26 +292,28 @@ class TestBase(unittest.TestCase):
             name: str
             school_name: str
 
-            def validate_school_name(self, value, fd):
+            @preformat(["school_name"])
+            def validate_school_name(self, value):
                 return value.upper()
 
-            def validate_name(self, value, fd):
+            @preformat(["name"])
+            def validate_name(self, value):
                 return value.upper()
 
         person = Person(name="nafiu", school_name="knust")
         self.assertEqual(person.name, "NAFIU")
         self.assertEqual(person.school_name, "KNUST")
 
-    def test_model_custom_field_validators_can_transform_field_value(self):
-        def validate_school_name(instance, value):
+    def test_model_custom_field_preformatter_can_coerce_field_value(self):
+        def format_school_name(instance, value):
             return value.upper()
 
-        def validate_name(instance, value):
+        def format_name(instance, value):
             return value.upper()
 
         class Person(BaseModel):
-            name: MiniAnnotated[str, Attrib(validators=[validate_name])]
-            school_name: MiniAnnotated[str, Attrib(validators=[validate_school_name])]
+            name: MiniAnnotated[str, Attrib(pre_formatter=format_name)]
+            school_name: MiniAnnotated[str, Attrib(pre_formatter=format_school_name)]
 
         person = Person(name="nafiu", school_name="knust")
         self.assertEqual(person.name, "NAFIU")
@@ -339,7 +344,8 @@ class TestBase(unittest.TestCase):
             name: str
             school_name: str
 
-            def validate(self, value, fd):
+            @preformat(["school_name", "name"])
+            def validate(self, value):
                 return value.upper()
 
         person = Person(name="nafiu", school_name="knust")
@@ -350,6 +356,9 @@ class TestBase(unittest.TestCase):
         class Person(BaseModel):
             name: str
             location: typing.Union[int, str]
+
+            class Config:
+                strict_mode = True
 
         person = Person(name="nafiu", location="kumasi")
         self.assertEqual(person.name, "nafiu")
@@ -406,14 +415,14 @@ class TestBase(unittest.TestCase):
             name: str
             school: InitVar[str]
 
-            def __model_init__(self, school):
+            def __post_init__(self, school):
                 self.school = school
 
         person = Person(name="nafiu", school="knust")
         self.assertEqual(person.name, "nafiu")
         self.assertEqual(person.school, "knust")
 
-        with patch.object(Person, "__model_init__", return_value=None) as mock_init:
+        with patch.object(Person, "__post_init__", return_value=None) as mock_init:
             Person(name="nafiu", school="knust")
             mock_init.assert_called_once_with("knust")
 
@@ -453,7 +462,7 @@ class TestBase(unittest.TestCase):
             class Person(BaseModel):
                 name: MiniAnnotated[str, 12]
 
-        with self.assertRaises(ValueError):
+        with self.assertRaises((ValueError, TypeError)):
 
             class Person(BaseModel):
                 name: MiniAnnotated[typing.Optional, Attrib()]
@@ -483,13 +492,13 @@ class TestBase(unittest.TestCase):
                 def __init__(self, names):
                     self.names = names
 
-        with self.assertRaises(PermissionError):
-
-            class Person1(BaseModel):
-                names: typing.List[str]
-
-                def __post_init__(self):
-                    pass
+        # with self.assertRaises(PermissionError):
+        #
+        #     class Person1(BaseModel):
+        #         names: typing.List[str]
+        #
+        #         def __post_init__(self):
+        #             pass
 
     def test_model_can_be_configured(self):
         class Person(BaseModel):

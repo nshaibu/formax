@@ -8,8 +8,8 @@ requires-python = ">=3.8"
 authors = [
     {name = "nshaibu", email = "nafiushaibu1@gmail.com"},
 ]
-description="Dataclass with validation"
-keywords=["pydantic-mini", "pydantic_mini", "Schema", "ORM", "dataclass", "pydantic", "data-validation", "simple", "dataclass with vaidation", "Data Serialisation", "Serialisation"]
+description="Pure Python data validation. Zero dependencies. Runs everywhere."
+keywords=["pydantic-mini", "pydantic_mini", "Schema", "ORM", "dataclass", "pydantic", "data-validation", "dataclass with vaidation", "Data Serialisation", "Serialisation"]
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
@@ -41,6 +41,7 @@ dev = [
     "packaging==24.2",
     "pluggy==1.5.0",
     "pytest==8.3.4",
+    "pytest-benchmark==5.2.3",
     "pyflakes==3.2.0",
     "mccabe==0.7.0",
     "flake8==7.1.1",
@@ -76,3 +77,9 @@ exclude_also = [
 ignore_errors = true
 skip_empty = true
 skip_covered = true
+[tool.coverage.run]
+omit = [
+    "tests/*",
+    "benchmark/*"
+]
+

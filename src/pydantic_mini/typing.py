@@ -6,7 +6,7 @@ import types
 import typing
 import inspect
 import collections
-from dataclasses import MISSING, Field, InitVar
+from dataclasses import MISSING, InitVar
 
 if sys.version_info >= (3, 11):
     from typing import dataclass_transform
@@ -22,9 +22,13 @@ from .exceptions import ValidationError
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
+    from .fields import MiniField
 
 __all__ = (
+    "Annotated",
     "MiniAnnotated",
+    "evaluate_forward_ref",
+    "resolve_and_cache_forward_ref",
     "Attrib",
     "get_type",
     "is_collection",
@@ -43,9 +47,16 @@ __all__ = (
     "resolve_annotations",
     "get_type_hints",
     "dataclass_transform",
+    "ValidatorType",
+    "PreFormatType",
 )
 
 logger = logging.getLogger(__name__)
+
+
+ValidatorType = typing.Callable[["BaseModel", typing.Any], typing.Union[bool, None]]
+
+PreFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
 
 
 # backward compatibility
@@ -81,6 +92,8 @@ _NON_DATACLASS_CONFIG_FIELD: typing.List[str] = [
     "disable_all_validation",
 ]
 
+_resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
+
 
 class ModelConfigWrapper:
     init: bool = True
@@ -89,8 +102,19 @@ class ModelConfigWrapper:
     order: bool = False
     unsafe_hash: bool = False
     frozen: bool = False
-    strict_mode: bool = False
+
+    # pydantic-mini specific config
+
+    strict_mode: bool = False  # if true, don't coerce values
+
+    # If true, all forward references are treated as typing.Any.
+    # This, therefore, disables all validations for the field
+    forward_refs_as_any: bool = False
+
+    # If true, disable type check but apply all custom validators
     disable_typecheck: bool = False
+
+    # If true, disable all validations
     disable_all_validation: bool = False
 
     def __init__(self, config: typing.Type):
@@ -136,7 +160,7 @@ class Attrib:
         self,
         default: typing.Optional[typing.Any] = MISSING,
         default_factory: typing.Optional[typing.Callable[[], typing.Any]] = MISSING,
-        pre_formatter: typing.Callable[[typing.Any], typing.Any] = MISSING,
+        pre_formatter: typing.Union[PreFormatType, MISSING] = MISSING,
         required: bool = False,
         help_text: typing.Optional[str] = None,
         allow_none: bool = False,
@@ -147,9 +171,7 @@ class Attrib:
         min_length: typing.Optional[int] = None,
         max_length: typing.Optional[int] = None,
         pattern: typing.Optional[typing.Union[str, typing.Pattern]] = None,
-        validators: typing.Optional[
-            typing.List[typing.Callable[[typing.Any], typing.Any]]
-        ] = MISSING,
+        validators: typing.Union[typing.List[ValidatorType], MISSING] = MISSING,
     ):
         """
         Represents a data attribute with optional validation, default values, and formatting logic.
@@ -209,39 +231,20 @@ class Attrib:
             ")"
         )
 
+    @property
+    def validators(self) -> typing.List[ValidatorType]:
+        return self._validators
+
     def has_default(self):
         return self.default is not MISSING or self.default_factory is not MISSING
 
     def has_pre_formatter(self):
         return self.pre_formatter is not None and callable(self.pre_formatter)
 
-    def _get_default(self) -> typing.Any:
-        if self.default is not MISSING:
-            return self.default
-        elif self.default_factory is not MISSING:
-            return self.default_factory()
-        return MISSING
-
-    def execute_pre_formatter(self, instance, fd: Field) -> None:
-        if self.has_pre_formatter():
-            value = getattr(instance, fd.name, None)
-            try:
-                value = self.pre_formatter(value)
-                if self.allow_none and value is None:
-                    setattr(instance, fd.name, None)
-                else:
-                    setattr(instance, fd.name, value)
-            except Exception as exc:
-                logger.error(
-                    "Pre-formatter error for %s : %s", (fd.name, exc), exc_info=exc
-                )
-                raise RuntimeError(
-                    f"Error occurred while executing the pre-formatter for field: {fd.name}"
-                ) from exc
+    def has_validators(self):
+        return len(self._validators) > 0
 
     def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
-        value = value or self._get_default()
-
         if self.allow_none and value is None:
             return True
 
@@ -262,19 +265,6 @@ class Attrib:
             validator = getattr(self, f"_validate_{name}")
             validator(value)
         return True
-
-    def execute_field_validators(self, instance: "BaseModel", fd: Field) -> None:
-        for validator in self._validators:
-            try:
-                result = validator(instance, getattr(instance, fd.name))
-                if result is not None:
-                    setattr(instance, fd.name, result)
-                elif self.allow_none:
-                    setattr(instance, fd.name, None)
-            except Exception as e:
-                if isinstance(e, ValidationError):
-                    raise
-                raise ValidationError(str(e)) from e
 
     def _validate_gt(self, value: typing.Any):
         try:
@@ -370,6 +360,51 @@ class Attrib:
             )
 
 
+if sys.version_info < (3, 9):
+
+    def evaluate_forward_ref(type_: ForwardRef, globalns: Any, localns: Any) -> Any:
+        return type_._evaluate(globalns, localns)
+
+elif sys.version_info < (3, 12, 4):
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Even though it is the right signature for python 3.9, mypy complains with
+        # `error: Too many arguments for "_evaluate" of "ForwardRef"` hence the cast...
+        # Python 3.13/3.12.4+ made `recursive_guard` a kwarg, so name it explicitly to avoid:
+        # TypeError: ForwardRef._evaluate() missing 1 required keyword-only argument: 'recursive_guard'
+        return typing.cast(typing.Any, type_)._evaluate(
+            globalns, localns, recursive_guard=set()
+        )
+
+elif sys.version_info < (3, 14):
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return typing.cast(typing.Any, type_)._evaluate(
+            globalns, localns, type_params=(), recursive_guard=set()
+        )
+
+else:
+
+    def evaluate_forward_ref(
+        type_: ForwardRef, globalns: typing.Any, localns: typing.Any
+    ) -> typing.Any:
+        # Pydantic 1.x will not support PEP 695 syntax, but provide `type_params` to avoid
+        # warnings:
+        return typing.evaluate_forward_ref(
+            type_,
+            globals=globalns,
+            locals=localns,
+            type_params=(),
+            _recursive_guard=set(),
+        )
+
+
 def is_mini_annotated(typ) -> bool:
     origin = get_origin(typ)
     return (
@@ -435,16 +470,50 @@ def is_any_type(typ) -> bool:
     return False
 
 
-def get_type(typ):
+def resolve_and_cache_forward_ref(
+    type_: ForwardRef,
+    globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    dont_resolve: bool = False,
+) -> typing.Any:
+    forward_ref_name = get_forward_type(type_)
+    if forward_ref_name:
+        if dont_resolve:
+            return forward_ref_name
+
+        _typ = _resolved_forward_ref.get(forward_ref_name)
+        if _typ is None:
+            try:
+                _typ = evaluate_forward_ref(type_, globalns=globalns, localns=localns)
+            except NameError as e:
+                logger.warning("Forward reference type resolution failed: %s", e)
+                raise
+            _resolved_forward_ref[forward_ref_name] = _typ
+
+        return _typ
+    return None
+
+
+def get_type(
+    typ: typing.Any,
+    globalns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    localns: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    resolve_forward_ref: bool = True,
+) -> typing.Any:
     if is_type(typ):
         return typ
 
     if is_optional_type(typ):
         type_args = get_args(typ)
         if type_args:
-            return get_type(type_args[0])
+            return get_type(
+                type_args[0],
+                resolve_forward_ref=resolve_forward_ref,
+                globalns=globalns,
+                localns=localns,
+            )
         else:
-            return None
+            return NoneType
 
     if is_any_type(typ):
         return object
@@ -453,9 +522,15 @@ def get_type(typ):
     if is_type(origin):
         return origin
 
+    forward_ref_type = resolve_and_cache_forward_ref(
+        typ, globalns=globalns, localns=localns, dont_resolve=not resolve_forward_ref
+    )
+    if forward_ref_type is not None:
+        return forward_ref_type
+
     type_args = get_args(typ)
     if len(type_args) > 0:
-        return get_type(type_args[0])
+        return get_type(type_args[0], globalns=globalns, localns=localns)
     else:
         return None
 
@@ -579,7 +654,7 @@ class MiniAnnotated:
 
         typ = params[0]
 
-        actual_typ = get_type(typ)
+        actual_typ = get_type(typ, resolve_forward_ref=False)
         forward_typ = get_forward_type(typ)
         if actual_typ is None and forward_typ is None:
             raise ValueError("'{}' is not a type".format(params[0]))

@@ -24,6 +24,14 @@ __version__ = "1.2.0"
 from .base import BaseModel
 from .typing import Attrib, MiniAnnotated
 from .exceptions import ValidationError
+from .decorators import validator, preformat
 
 
-__all__ = ["BaseModel", "Attrib", "MiniAnnotated", "ValidationError"]
+__all__ = [
+    "BaseModel",
+    "Attrib",
+    "MiniAnnotated",
+    "ValidationError",
+    "validator",
+    "preformat",
+]
