@@ -61,3 +61,21 @@ class UserNestedMini(BaseModel):
     id: int
     name: str
     profile: ProfileMini
+
+
+class DisableAllValidationMini(BaseModel):
+    id: int
+    name: str
+    profile: ProfileMini
+
+    class Config:
+        disable_all_validations = True
+
+
+class DisableTypeCheckMini(BaseModel):
+    id: int
+    name: str
+    profile: ProfileMini
+
+    class Config:
+        disable_type_check = True

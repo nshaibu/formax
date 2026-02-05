@@ -345,7 +345,7 @@ class MiniField:
         "forward_ref_type_name",
         "_default",
         "_default_factory",
-        "model_context"
+        "model_context",
     )
 
     def __init__(

@@ -1,6 +1,7 @@
 from pydantic_mini import BaseModel, validator, preformat, ValidationError
 from enum import Enum
 
+
 def test_complete_workflow():
     class Priority(Enum):
         LOW = "low"
@@ -10,7 +11,7 @@ def test_complete_workflow():
         title: str
         priority: Priority
 
-        @preformat(['priority'])
+        @preformat(["priority"])
         def normalize_priority(self, value):
             if isinstance(value, str):
                 if "." in value:
@@ -18,12 +19,12 @@ def test_complete_workflow():
                 return Priority[value.upper()]
             return value
 
-        @validator(['title'])
+        @validator(["title"])
         def check_title(self, value):
             if not value.strip():
                 raise ValidationError("Title required")
 
-        @preformat(['title'])
+        @preformat(["title"])
         def clean_title(self, value):
             return value.strip()
 

@@ -7,7 +7,7 @@ def test_single_field_validator():
     class Model(BaseModel):
         age: int
 
-        @validator(['age'])
+        @validator(["age"])
         def check_age(self, value):
             if value < 0:
                 raise ValidationError("Must be positive")
@@ -24,7 +24,7 @@ def test_multi_field_validator():
         field_a: int
         field_b: int
 
-        @validator(['field_a', 'field_b'])
+        @validator(["field_a", "field_b"])
         def check_both(self, value):
             if value < 0:
                 raise ValidationError("Must be positive")
@@ -40,7 +40,7 @@ def test_instance_access_in_validator():
         min_val: int
         max_val: int
 
-        @validator(['max_val'])
+        @validator(["max_val"])
         def check_max(self, value):
             if value <= self.min_val:
                 raise ValidationError("max must be > min")
@@ -55,7 +55,7 @@ def test_single_field_preformatter():
     class Model(BaseModel):
         age: int
 
-        @preformat(['age'])
+        @preformat(["age"])
         def check_age(self, value):
             return value + 5
 
@@ -71,16 +71,15 @@ def test_validator_with_typing_any():
         validated: int
         flexible: typing.Any = None
 
-        @validator(['validated'])
+        @validator(["validated"])
         def check_validated(self, value):
             if value < 0:
                 raise ValidationError("Must be positive")
 
-        @validator(['flexible'])
+        @validator(["flexible"])
         def this_should_not_run(self, value):
             # Should be skipped
             raise ValidationError("Should not reach here")
-
 
     m = Model(validated=10, flexible="anything")
     assert m.flexible == "anything"
@@ -92,7 +91,7 @@ def test_nested_model_validation():
     class Inner(BaseModel):
         value: int
 
-        @validator(['value'])
+        @validator(["value"])
         def check_value(self, value):
             if value < 0:
                 raise ValidationError("Must be positive")
@@ -110,7 +109,7 @@ def test_validator_error_messages():
     class Model(BaseModel):
         age: int
 
-        @validator(['age'])
+        @validator(["age"])
         def check_age(self, value):
             if value < 0:
                 raise ValidationError("Age cannot be negative")
@@ -129,7 +128,7 @@ def test_cross_field_validation():
         min_val: int
         max_val: int
 
-        @validator(['max_val'])
+        @validator(["max_val"])
         def check_max(self, value):
             if value <= self.min_val:
                 raise ValidationError("max must be > min")
