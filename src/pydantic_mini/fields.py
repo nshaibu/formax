@@ -417,8 +417,8 @@ class _MiniFieldBase:
     def _init_type_expectations(
         self,
         instance: "BaseModel",
-        strict_status: bool,
         resolve_forward_ref: bool = True,
+        model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
     ):
         raise NotImplementedError
 
@@ -489,9 +489,12 @@ class MiniField(_MiniFieldBase):
     def _init_type_expectations(
         self,
         instance: "BaseModel",
-        strict_status: bool,
         resolve_forward_ref: bool = True,
+        model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
     ):
+        if model_config is None:
+            model_config = {}
+
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
                 self._actual_annotated_type,
@@ -501,7 +504,9 @@ class MiniField(_MiniFieldBase):
         )
 
         self.expected_type = _ExpectedTypeResolver(
-            actual_types=self.type_annotation_args, strict_model=strict_status
+            actual_types=self.type_annotation_args,
+            strict_model=model_config.get("strict_mode", False),
+            disable_type_check=model_config.get("disable_type_check", False),
         )
 
         inner_types_list: typing.List[type] = []
@@ -519,7 +524,11 @@ class MiniField(_MiniFieldBase):
                     inner_types_list.append(typ)
 
         try:
-            self.inner_type = _ExpectedTypeResolver(actual_types=tuple(inner_types_list), strict_model=strict_status)  # type: ignore
+            self.inner_type = _ExpectedTypeResolver(
+                actual_types=tuple(inner_types_list),  # type: ignore
+                strict_model=model_config.get("strict_mode", False),
+                disable_type_check=model_config.get("disable_type_check", False),
+            )
         except TypeError:
             self.inner_type = None
 

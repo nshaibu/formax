@@ -63,7 +63,7 @@ class SchemaMeta(type):
                 if isinstance(mini_field, MiniField):
                     # Initialise type expectations with the fully realised class
                     mini_field._init_type_expectations(
-                        new_class, non_dataclass_config["strict_mode"], False
+                        new_class, resolve_forward_ref=False, model_config=non_dataclass_config
                     )
 
         matcher = _ClassSignatureMatcher(new_class)
@@ -245,7 +245,9 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        _disable_all_validation = config.get_non_dataclass_config().get("disable_all_validation", False)
+        _disable_all_validation = config.get_non_dataclass_config().get(
+            "disable_all_validation", False
+        )
 
         for field_name, annotation, value in cls.get_fields(attrs):
             if not isinstance(field_name, str) or not field_name.isidentifier():
@@ -275,10 +277,11 @@ class SchemaMeta(type):
                 # let's ignore init-var and class-var, dataclass will take care of them
                 # typing.Any does not require any type Validation
                 ann_with_defaults[field_name] = annotation
+
+                value_field = cls.coerce_value_to_dataclass_field(
+                    field_name, attrs, value
+                )
                 if annotation is not typing.Any:
-                    value_field = cls.coerce_value_to_dataclass_field(
-                        field_name, attrs, value
-                    )
                     actual_type = getattr(annotation, "type", get_args(annotation))
                     if isinstance(actual_type, (tuple, list)):
                         if actual_type:
@@ -286,7 +289,10 @@ class SchemaMeta(type):
                         else:
                             actual_type = object
                     annotation = MiniAnnotated[actual_type, Attrib()]
-                    attrs[field_name] = MiniField(field_name, annotation, value_field)
+                else:
+                    annotation = MiniAnnotated[object, Attrib()]
+
+                attrs[field_name] = MiniField(field_name, annotation, value_field)
                 continue
 
             if not is_mini_annotated(annotation):
@@ -335,7 +341,9 @@ class SchemaMeta(type):
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
             if _disable_all_validation:
-                mini_field = DisableAllValidationMiniField(field_name, annotation, value_field)
+                mini_field = DisableAllValidationMiniField(
+                    field_name, annotation, value_field
+                )
             else:
                 mini_field = MiniField(field_name, annotation, value_field)
 

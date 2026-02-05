@@ -69,7 +69,7 @@ def test_validator_with_typing_any():
 
     class Model(BaseModel):
         validated: int
-        flexible: typing.Any = None
+        flexible: typing.Any
 
         @validator(["validated"])
         def check_validated(self, value):
