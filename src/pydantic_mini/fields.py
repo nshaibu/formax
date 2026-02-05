@@ -78,6 +78,7 @@ class _ExpectedType:
         "is_class",
         "is_forward_ref",
         "signature_matcher",
+        "_resolved",
     )
 
     def __init__(self, typ_: typing.Type[typing.Any], order: int) -> None:
@@ -90,7 +91,10 @@ class _ExpectedType:
         self.order: int = order
         self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
 
-        self.is_forward_ref = get_forward_type(typ_) is not None
+        self.is_forward_ref = isinstance(typ_, (ForwardRef, str))
+
+        self._resolved = not self.is_forward_ref
+
         self.is_builtin: bool = is_builtin_type(self.type)
         self.is_enum: bool = isinstance(self.type, type) and issubclass(self.type, Enum)
         self.is_model: bool = hasattr(
@@ -110,8 +114,10 @@ class _ExpectedType:
         return self.type is NoneType
 
     def isinstance_of(self, value: typing.Any) -> bool:
-        if self.type is None:
-            self.type = NoneType
+        # FIGURE-OUT: for union of types that have Any in there, we have to
+        # figure out the best fit instead of returning true
+        # if self.type is typing.Any:
+        #     return True
         return isinstance(value, self.type)
 
     def resolve_type(
@@ -128,12 +134,7 @@ class _ExpectedType:
         Returns:
             Self with resolved type information
         """
-        if self.type is None:
-            self.type = NoneType
-
-        if not self.is_forward_ref:
-            return self
-        elif not isinstance(self.type, str):
+        if self._resolved:
             return self
 
         forward_type = self.type
@@ -145,6 +146,8 @@ class _ExpectedType:
         )
 
         self._update_from_resolved_type(resolved_type)
+        self._resolved = True
+        self.is_forward_ref = False
 
         return self
 
@@ -213,10 +216,13 @@ class _ExpectedType:
 
 
 class _ExpectedTypeResolver:
-    __slots__ = ("_actual_types", "_strict_model", "module_context")
+    __slots__ = ("_actual_types", "_strict_model", "module_context", "_finalised")
 
     def __init__(
-        self, actual_types: typing.Tuple[type], strict_model: bool = False
+        self,
+        actual_types: typing.Tuple[type],
+        strict_model: bool = False,
+        forward_refs_as_any: bool = False,
     ) -> None:
         """
         Validate and coerce datatype
@@ -230,7 +236,13 @@ class _ExpectedTypeResolver:
 
         for index, typ in enumerate(actual_types):
             expected_type = _ExpectedType(typ, order=index)
+
             if expected_type not in self._actual_types:
+                if expected_type.is_forward_ref and forward_refs_as_any:
+                    expected_type.type = typing.Any
+                    expected_type.is_forward_ref = False
+                    expected_type._resolved = True
+
                 self._actual_types.append(expected_type)
 
         self._actual_types = sorted(self._actual_types, key=lambda t: t.order)
@@ -238,6 +250,18 @@ class _ExpectedTypeResolver:
         self._strict_model: bool = strict_model
 
         self.module_context: typing.Dict[str, typing.Any] = {}
+
+        self._finalised = False
+
+    def finalize(self):
+        if self._finalised:
+            return
+
+        for et in self._actual_types:
+            if et.is_forward_ref:
+                et.resolve_type(globalns=self.module_context)
+
+        self._finalised = True
 
     def type_string(self) -> str:
         if self._actual_types:
@@ -258,11 +282,7 @@ class _ExpectedTypeResolver:
                 f"Cannot coerce {type(value).__name__} to any of the type(s) {self.type_string()}"
             )
 
-        resolved_matching_type = matching_type.resolve_type(
-            globalns=self.module_context
-        )
-
-        if resolved_matching_type.isinstance_of(value):
+        if matching_type.isinstance_of(value):
             return value
 
         if isinstance(value, dict):
@@ -270,7 +290,7 @@ class _ExpectedTypeResolver:
                 return self._instantiate_from_dict(matching_type, value)
 
         try:
-            return resolved_matching_type(value)
+            return matching_type(value)
         except (ValueError, TypeError) as e:
             raise TypeError(
                 f"Failed to coerce {value} to {matching_type.__name__}: {e}"
@@ -280,9 +300,7 @@ class _ExpectedTypeResolver:
         """Determine which type best matches the value"""
 
         for expected_type in self._actual_types:
-            if expected_type.resolve_type(globalns=self.module_context).isinstance_of(
-                value
-            ):
+            if expected_type.isinstance_of(value):
                 return expected_type
 
         # coercion type detection section
@@ -295,7 +313,7 @@ class _ExpectedTypeResolver:
             for expected_type in self._actual_types:
                 if expected_type.is_builtin or expected_type.is_enum:
                     try:
-                        expected_type.resolve_type(globalns=self.module_context)(value)
+                        expected_type(value)
                         return expected_type
                     except (ValueError, TypeError):
                         continue
@@ -306,7 +324,7 @@ class _ExpectedTypeResolver:
         self, _expected_type: _ExpectedType, data: typing.Dict[str, typing.Any]
     ) -> typing.Any:
         """Instantiate a class from a dictionary"""
-        return _expected_type.resolve_type(globalns=self.module_context)(**data)
+        return _expected_type(**data)
 
 
 class MiniField:
@@ -429,6 +447,13 @@ class MiniField:
         except TypeError:
             self.inner_type = None
 
+    def _finalise_type_resolver(self):
+        if self.expected_type:
+            self.expected_type.finalize()
+
+        if self.inner_type:
+            self.inner_type.finalize()
+
     def __get__(self, instance: "BaseModel", owner: typing.Any = None) -> typing.Any:
         if instance is None:
             return self
@@ -451,14 +476,16 @@ class MiniField:
         disable_typecheck = config.get("disable_typecheck", False)
         disable_all_validation = config.get("disable_all_validation", False)
 
-        if self.expected_type is None:
-            self._init_type_expectations(instance, strict_status=strict_mode)
+        if disable_all_validation:
+            instance.__dict__[self.private_name] = value
+            return None
 
         model_context = self.get_model_context(instance)
-
         self.expected_type.module_context = model_context
-        if self.inner_type is not None:
+        if self.inner_type:
             self.inner_type.module_context = model_context
+
+        self._finalise_type_resolver()
 
         if isinstance(value, MiniField):
             value = value.get_default()
@@ -469,42 +496,42 @@ class MiniField:
 
         for preformat_callback in self._preformat_callbacks:
             try:
-                if callable(preformat_callback):
-                    value = preformat_callback(instance, value)
+                value = preformat_callback(instance, value)
             except Exception as e:
                 raise RuntimeError(
                     f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
                 ) from e
 
-        if not disable_all_validation:
-            # no type validation for Any field type and type checking is not disabled
-            if self._actual_annotated_type is not typing.Any and not disable_typecheck:
-                if not strict_mode:
-                    coerced_value = self._value_coerce(value)
-                    if coerced_value is not None:
-                        value = coerced_value
-                self._field_type_validator(value, instance)
-            else:
-                # run other field validators when type checking is disabled
-                if self._query:
-                    self._query.execute_field_validators(value, instance)
-                    self._query.validate(value, self.name)
+        # if not disable_all_validation:
+        # no type validation for Any field type and type checking is not disabled
+        if self._actual_annotated_type is not typing.Any and not disable_typecheck:
+            if not strict_mode:
+                coerced_value = self._value_coerce(value)
+                if coerced_value is not None:
+                    value = coerced_value
+            self._field_type_validator(value, instance)
+        else:
+            # run other field validators when type checking is disabled
+            if self._query:
+                self._query.execute_field_validators(value, instance)
+                self._query.validate(value, self.name)
 
-            try:
-                for validator in self._field_validators:
-                    status = validator(instance, value)
-                    if status is False:
-                        raise ValidationError(
-                            "Validation of field '{}' with value '{}' failed.".format(
-                                self.name, value
-                            )
+        try:
+            for validator in self._field_validators:
+                status = validator(instance, value)
+                if status is False:
+                    raise ValidationError(
+                        "Validation of field '{}' with value '{}' failed.".format(
+                            self.name, value
                         )
-            except Exception as e:
-                if isinstance(e, ValidationError):
-                    raise
-                raise ValidationError("Validation error") from e
+                    )
+        except Exception as e:
+            if isinstance(e, ValidationError):
+                raise
+            raise ValidationError("Validation error") from e
 
         instance.__dict__[self.private_name] = value
+        return None
 
     @staticmethod
     def get_model_config(instance: "BaseModel") -> typing.Dict[str, typing.Any]:

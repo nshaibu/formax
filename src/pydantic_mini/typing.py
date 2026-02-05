@@ -102,8 +102,19 @@ class ModelConfigWrapper:
     order: bool = False
     unsafe_hash: bool = False
     frozen: bool = False
-    strict_mode: bool = False
+
+    # pydantic-mini specific config
+
+    strict_mode: bool = False  # if true, don't coerce values
+
+    # If true, all forward references are treated as typing.Any.
+    # This, therefore, disables all validations for the field
+    forward_refs_as_any: bool = False
+
+    # If true, disable type check but apply all custom validators
     disable_typecheck: bool = False
+
+    # If true, disable all validations
     disable_all_validation: bool = False
 
     def __init__(self, config: typing.Type):
