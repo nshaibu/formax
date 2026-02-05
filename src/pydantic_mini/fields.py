@@ -358,7 +358,7 @@ class _MiniFieldBase:
         "_field_validators",
         "_preformat_callbacks",
         "model_context",
-        "disable_type_check"
+        "disable_type_check",
     )
 
     def __init__(
@@ -426,6 +426,17 @@ class _MiniFieldBase:
                 )
         return value
 
+    def run_preformatters(self, instance: "BaseModel", value: typing.Any) -> typing.Any:
+        for preformat_callback in self._preformat_callbacks:
+            try:
+                value = preformat_callback(instance, value)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
+                ) from e
+
+        return value
+
     def _init_type_expectations(
         self,
         instance: "BaseModel",
@@ -456,8 +467,42 @@ class _MiniFieldBase:
 
 class DisableAllValidationMiniField(_MiniFieldBase):
 
+    # NOTED: Removed all type introspections and validators since all validations are disabled
+    def __init__(
+        self,
+        name: str,
+        mini_annotated: Annotated,
+        dc_field_obj: typing.Optional[Field] = None,
+        disable_type_check: bool = False,
+    ):
+        self.name = name
+        self.private_name = f"_{name}"
+
+        self._query: Attrib = mini_annotated.__metadata__[0]
+
+        self._field_validators: typing.Set[ValidatorType] = set()
+        self._preformat_callbacks: typing.Set[PreFormatType] = set()
+
+        if self._query.pre_formatter is not MISSING:
+            if callable(self._query.pre_formatter):
+                self._preformat_callbacks.add(self._query.pre_formatter)
+
+        self._default = (
+            self._query.default
+            if self._query.default is MISSING
+            else dc_field_obj.default
+        )
+        self._default_factory = (
+            self._query.default_factory
+            if self._query.default_factory is MISSING
+            else dc_field_obj.default_factory
+        )
+
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         value = self.processor_default_value(value)
+
+        value = self.run_preformatters(instance, value)
+
         instance.__dict__[self.private_name] = value
         return value
 
@@ -480,7 +525,9 @@ class MiniField(_MiniFieldBase):
         dc_field_obj: typing.Optional[Field] = None,
         disable_type_check: bool = False,
     ):
-        super().__init__(name, mini_annotated, dc_field_obj, disable_type_check=disable_type_check)
+        super().__init__(
+            name, mini_annotated, dc_field_obj, disable_type_check=disable_type_check
+        )
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
@@ -555,13 +602,7 @@ class MiniField(_MiniFieldBase):
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         value = self.processor_default_value(value)
 
-        for preformat_callback in self._preformat_callbacks:
-            try:
-                value = preformat_callback(instance, value)
-            except Exception as e:
-                raise RuntimeError(
-                    f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
-                ) from e
+        value = self.run_preformatters(instance, value)
 
         if not self.disable_type_check:
             model_context = self.get_model_context(instance)
@@ -573,7 +614,7 @@ class MiniField(_MiniFieldBase):
 
             coerced_value = self._value_coerce(value)
             if coerced_value is not None:
-                    value = coerced_value
+                value = coerced_value
             self._field_type_validator(value, instance)
         else:
             # run other field validators when type checking is disabled
@@ -596,10 +637,6 @@ class MiniField(_MiniFieldBase):
 
         instance.__dict__[self.private_name] = value
         return None
-
-    @staticmethod
-    def get_model_config(instance: "BaseModel") -> typing.Dict[str, typing.Any]:
-        return getattr(instance, "__pydantic_mini_extra_config__", {})
 
     @staticmethod
     def get_model_context(

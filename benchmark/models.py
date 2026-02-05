@@ -80,6 +80,7 @@ class DisableTypeCheckMini(BaseModel):
     class Config:
         disable_type_check = True
 
+
 class FlatDisableAllValidationProfileMini(BaseModel):
     id: int
     name: str

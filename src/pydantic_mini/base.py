@@ -63,7 +63,9 @@ class SchemaMeta(type):
                 if isinstance(mini_field, MiniField):
                     # Initialise type expectations with the fully realised class
                     mini_field._init_type_expectations(
-                        new_class, resolve_forward_ref=False, model_config=non_dataclass_config
+                        new_class,
+                        resolve_forward_ref=False,
+                        model_config=non_dataclass_config,
                     )
 
         matcher = _ClassSignatureMatcher(new_class)
@@ -295,9 +297,16 @@ class SchemaMeta(type):
                     disable_type_check = True
 
                 if disable_all_validation:
-                    attrs[field_name] = DisableAllValidationMiniField(field_name, annotation, value_field)
+                    attrs[field_name] = DisableAllValidationMiniField(
+                        field_name, annotation, value_field
+                    )
                 else:
-                    attrs[field_name] = MiniField(field_name, annotation, value_field, disable_type_check=disable_type_check)
+                    attrs[field_name] = MiniField(
+                        field_name,
+                        annotation,
+                        value_field,
+                        disable_type_check=disable_type_check,
+                    )
 
                 continue
 
@@ -351,7 +360,12 @@ class SchemaMeta(type):
                     field_name, annotation, value_field
                 )
             else:
-                mini_field = MiniField(field_name, annotation, value_field, disable_type_check=disable_type_check)
+                mini_field = MiniField(
+                    field_name,
+                    annotation,
+                    value_field,
+                    disable_type_check=disable_type_check,
+                )
 
                 if field_name in validators:
                     for validator_func in validators[field_name]:

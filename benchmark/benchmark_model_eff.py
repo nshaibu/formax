@@ -8,7 +8,7 @@ from .models import (
     DisableTypeCheckMini,
     DisableAllValidationMini,
     FlatDisableTypeCheckProfileMini,
-    FlatDisableAllValidationProfileMini
+    FlatDisableAllValidationProfileMini,
 )
 
 
