@@ -406,15 +406,15 @@ class SchemaMeta(type):
                 )
 
                 if field_name in validators:
-                    # for validator_func in validators[field_name]:
-                    #     mini_field.add_validator(validator_func)
-                    compiled_validator: ValidatorType = compile_callbacks(validators[field_name], "field", field_name, "validate")
+                    compiled_validator: ValidatorType = compile_callbacks(
+                        validators[field_name], "field", field_name, "validate"
+                    )
                     mini_field.set_validator(compiled_validator)
 
                 if field_name in preformatters:
-                    # for preformat_func in preformatters[field_name]:
-                    #     mini_field.add_preformat_callback(preformat_func)
-                    compiled_preformat_callback: PreFormatType = compile_callbacks(preformatters[field_name], "field", field_name, "preformat")
+                    compiled_preformat_callback: PreFormatType = compile_callbacks(
+                        preformatters[field_name], "field", field_name, "preformat"
+                    )
                     mini_field.set_preformat_callback(compiled_preformat_callback)
 
             attrs[field_name] = mini_field

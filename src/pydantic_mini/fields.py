@@ -384,14 +384,6 @@ class _MiniFieldBase:
         self._field_validator: typing.Optional[ValidatorType] = None
         self._preformat_callback: typing.Optional[PreFormatType] = None
 
-        # if self._query.pre_formatter is not MISSING:
-        #     if callable(self._query.pre_formatter):
-        #         self._preformat_callbacks.add(self._query.pre_formatter)
-        #
-        # for func in self._query._validators:
-        #     if callable(func):
-        #         self._field_validators.add(func)
-
         self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
         self.disable_type_check = disable_type_check
 
@@ -490,10 +482,6 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         self._field_validator: typing.Optional[ValidatorType] = None
         self._preformat_callback: typing.Optional[PreFormatType] = None
 
-        # if self._query.pre_formatter is not MISSING:
-        #     if callable(self._query.pre_formatter):
-        #         self._preformat_callbacks.add(self._query.pre_formatter)
-
         self._default = (
             self._query.default
             if self._query.default is MISSING
@@ -573,7 +561,7 @@ class MiniField(_MiniFieldBase):
         self.expected_type = _ExpectedTypeResolver(
             actual_types=self.type_annotation_args,
             strict_model=model_config.get("strict_mode", False),
-            disable_type_check=model_config.get("disable_type_check", False),
+            disable_type_check=self.disable_type_check,
         )
 
         inner_types_list: typing.List[type] = []
@@ -594,7 +582,7 @@ class MiniField(_MiniFieldBase):
             self.inner_type = _ExpectedTypeResolver(
                 actual_types=tuple(inner_types_list),  # type: ignore
                 strict_model=model_config.get("strict_mode", False),
-                disable_type_check=model_config.get("disable_type_check", False),
+                disable_type_check=self.disable_type_check,
             )
         except TypeError:
             self.inner_type = None
@@ -625,18 +613,17 @@ class MiniField(_MiniFieldBase):
             self._field_type_validator(value, instance)
         else:
             # run other field validators when type checking is disabled
-            # self._query.execute_field_validators(value, instance)
             self._query.validate(value, self.name)
 
         if self._field_validator:
             try:
-                    status = self._field_validator(instance, value)
-                    if status is False:
-                        raise ValidationError(
-                            "Validation of field '{}' with value '{}' failed.".format(
-                                self.name, value
-                            )
+                status = self._field_validator(instance, value)
+                if status is False:
+                    raise ValidationError(
+                        "Validation of field '{}' with value '{}' failed.".format(
+                            self.name, value
                         )
+                    )
             except Exception as e:
                 if isinstance(e, ValidationError):
                     raise
@@ -675,33 +662,23 @@ class MiniField(_MiniFieldBase):
         return None
 
     def _field_type_validator(self, value: typing.Any, instance: "BaseModel") -> None:
-        # if not self._query.has_default() and value is None:
-        #     raise ValidationError(
-        #         "Field '{}' cannot be empty.".format(self.name),
-        #         params={"field": self.name, "annotation": self._mini_annotated_type},
-        #     )
-
-        # self._query.execute_field_validators(value, instance)
-
-        # if self._actual_annotated_type and typing.Any not in self.type_annotation_args:
         if self.is_collection:
-                inner_type: type = self._inner_type_args[0]
-                if inner_type and inner_type is not typing.Any:
-                    inner_type = self.resolve_actual_type(
-                        inner_type, globalns=self.get_model_context(instance)
-                    )
+            if self.inner_type:
+                old_strict_mode = self.inner_type._strict_model
+                self.inner_type._strict_model = False
 
-                    if any([not isinstance(val, inner_type) for val in value]):
+                for val in value:
+                    if not self.inner_type.validate(val):
                         raise TypeError(
-                            "Expected a collection of values of type '{}'. Values: {} ".format(
-                                inner_type, value
-                            )
+                            f"Expected a collection of values of type(s) '{self.inner_type.type_string()}'. Value: {val} "
                         )
+
+                self.inner_type._strict_model = old_strict_mode
         elif not self.expected_type.validate(value):
-                raise TypeError(
-                    f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
-                    f"but got {type(value).__name__}."
-                )
+            raise TypeError(
+                f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
+                f"but got {type(value).__name__}."
+            )
 
         self._query.validate(value, self.name)
 

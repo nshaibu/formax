@@ -244,16 +244,7 @@ class Attrib:
     def has_validators(self):
         return len(self._validators) > 0
 
-    def _get_default(self) -> typing.Any:
-        if self.default is not MISSING:
-            return self.default
-        elif self.default_factory is not MISSING:
-            return self.default_factory()
-        return MISSING
-
     def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
-        value = value or self._get_default()
-
         if self.allow_none and value is None:
             return True
 
@@ -274,15 +265,6 @@ class Attrib:
             validator = getattr(self, f"_validate_{name}")
             validator(value)
         return True
-
-    # def execute_field_validators(self, value: typing, instance: "BaseModel") -> None:
-    #     for validator in self._validators:
-    #         try:
-    #             validator(instance, value)
-    #         except Exception as e:
-    #             if isinstance(e, ValidationError):
-    #                 raise
-    #             raise ValidationError(str(e)) from e
 
     def _validate_gt(self, value: typing.Any):
         try:
