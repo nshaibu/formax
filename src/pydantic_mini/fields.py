@@ -439,7 +439,9 @@ class MiniField:
             if t not in inner_types_list:
                 typ = get_type(
                     t,
-                    globalns=self.get_model_context(instance),
+                    globalns=self.get_model_context(
+                        instance, cache_context=resolve_forward_ref
+                    ),
                     resolve_forward_ref=resolve_forward_ref,
                 )
                 if typ is not None:
@@ -543,11 +545,19 @@ class MiniField:
 
     @staticmethod
     def get_model_context(
-        instance: "BaseModel",
+        instance: "BaseModel", cache_context: bool = True
     ) -> typing.Optional[typing.Dict[str, typing.Any]]:
         if instance is None:
             return None
-        return getattr(inspect.getmodule(instance.__class__), "__dict__", None)
+        context = instance.__dict__.get("__pydantic_mini_model_context__", None)
+        if context:
+            return context
+
+        context = getattr(inspect.getmodule(instance.__class__), "__dict__", None)
+        if cache_context:
+            instance.__dict__["__pydantic_mini_model_context__"] = context
+
+        return context
 
     def _value_coerce(self, value: typing.Any) -> typing.Any:
         if self.is_collection:
@@ -623,7 +633,9 @@ class MiniField:
                 for arg in type_args:
                     _arg_type = get_type(
                         arg,
-                        globalns=self.get_model_context(instance),
+                        globalns=self.get_model_context(
+                            instance, cache_context=resolve_forward_ref
+                        ),
                         resolve_forward_ref=resolve_forward_ref,
                     )
                     if _arg_type is not None:
@@ -634,7 +646,9 @@ class MiniField:
             return (
                 get_type(
                     typ,
-                    globalns=self.get_model_context(instance),
+                    globalns=self.get_model_context(
+                        instance, cache_context=resolve_forward_ref
+                    ),
                     resolve_forward_ref=resolve_forward_ref,
                 ),
             )
