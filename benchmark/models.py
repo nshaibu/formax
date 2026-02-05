@@ -81,16 +81,20 @@ class DisableTypeCheckMini(BaseModel):
         disable_type_check = True
 
 class FlatDisableAllValidationProfileMini(BaseModel):
-    email: str
-    age: int
+    id: int
+    name: str
+    scores: List[int]
+    active: bool
 
     class Config:
         disable_all_validations = True
 
 
 class FlatDisableTypeCheckProfileMini(BaseModel):
-    email: str
-    age: int
+    id: int
+    name: str
+    scores: List[int]
+    active: bool
 
     class Config:
         disable_type_check = True
