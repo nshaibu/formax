@@ -77,3 +77,9 @@ exclude_also = [
 ignore_errors = true
 skip_empty = true
 skip_covered = true
+[tool.coverage.run]
+omit = [
+    "tests/*",
+    "benchmark/*"
+]
+
