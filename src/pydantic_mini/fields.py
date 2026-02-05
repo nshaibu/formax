@@ -269,6 +269,12 @@ class _ExpectedTypeResolver:
         if self._finalised:
             return
 
+        # Separated to speed-up called to finalize because there is no attribute
+        # update request for finalised resolver
+        if self._disable_type_check:
+            self._finalised = True
+            return
+
         for et in self._actual_types:
             if et.is_forward_ref:
                 et.resolve_type(globalns=self.module_context)
@@ -420,7 +426,7 @@ class _MiniFieldBase:
         resolve_forward_ref: bool = True,
         model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
     ):
-        raise NotImplementedError
+        pass
 
     def __get__(self, instance: "BaseModel", owner: typing.Any = None) -> typing.Any:
         if instance is None:
@@ -556,11 +562,6 @@ class MiniField(_MiniFieldBase):
                     f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
                 ) from e
 
-        # TODO: remove after integrating descriptor
-        if disable_all_validation:
-            instance.__dict__[self.private_name] = value
-            return None
-
         model_context = self.get_model_context(instance)
         self.expected_type.module_context = model_context
         if self.inner_type:
@@ -571,9 +572,9 @@ class MiniField(_MiniFieldBase):
         # if not disable_all_validation:
         # no type validation for Any field type and type checking is not disabled
         if self._actual_annotated_type is not typing.Any and not disable_typecheck:
-            if not strict_mode:
-                coerced_value = self._value_coerce(value)
-                if coerced_value is not None:
+            # if not strict_mode:
+            coerced_value = self._value_coerce(value)
+            if coerced_value is not None:
                     value = coerced_value
             self._field_type_validator(value, instance)
         else:
