@@ -358,6 +358,7 @@ class _MiniFieldBase:
         "_field_validators",
         "_preformat_callbacks",
         "model_context",
+        "disable_type_check"
     )
 
     def __init__(
@@ -365,6 +366,7 @@ class _MiniFieldBase:
         name: str,
         mini_annotated: Annotated,
         dc_field_obj: typing.Optional[Field] = None,
+        disable_type_check: bool = False,
     ):
         if not is_mini_annotated(mini_annotated):
             raise ValidationError(
@@ -391,6 +393,10 @@ class _MiniFieldBase:
                 self._field_validators.add(func)
 
         self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
+        self.disable_type_check = disable_type_check
+
+        if self._actual_annotated_type is typing.Any and not disable_type_check:
+            self.disable_type_check = True
 
         # default value handler
         self._default = (
@@ -472,8 +478,9 @@ class MiniField(_MiniFieldBase):
         name: str,
         mini_annotated: Annotated,
         dc_field_obj: typing.Optional[Field] = None,
+        disable_type_check: bool = False,
     ):
-        super().__init__(name, mini_annotated, dc_field_obj)
+        super().__init__(name, mini_annotated, dc_field_obj, disable_type_check=disable_type_check)
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
@@ -548,12 +555,6 @@ class MiniField(_MiniFieldBase):
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         value = self.processor_default_value(value)
 
-        # get model configurations
-        config = self.get_model_config(instance)
-        strict_mode = config.get("strict_mode", False)
-        disable_typecheck = config.get("disable_typecheck", False)
-        disable_all_validation = config.get("disable_all_validation", False)
-
         for preformat_callback in self._preformat_callbacks:
             try:
                 value = preformat_callback(instance, value)
@@ -562,26 +563,22 @@ class MiniField(_MiniFieldBase):
                     f"Preprocessor '{preformat_callback.__name__}' failed to process value '{value}'"
                 ) from e
 
-        model_context = self.get_model_context(instance)
-        self.expected_type.module_context = model_context
-        if self.inner_type:
-            self.inner_type.module_context = model_context
+        if not self.disable_type_check:
+            model_context = self.get_model_context(instance)
+            self.expected_type.module_context = model_context
+            if self.inner_type:
+                self.inner_type.module_context = model_context
 
-        self._finalise_type_resolver()
+            self._finalise_type_resolver()
 
-        # if not disable_all_validation:
-        # no type validation for Any field type and type checking is not disabled
-        if self._actual_annotated_type is not typing.Any and not disable_typecheck:
-            # if not strict_mode:
             coerced_value = self._value_coerce(value)
             if coerced_value is not None:
                     value = coerced_value
             self._field_type_validator(value, instance)
         else:
             # run other field validators when type checking is disabled
-            if self._query:
-                self._query.execute_field_validators(value, instance)
-                self._query.validate(value, self.name)
+            self._query.execute_field_validators(value, instance)
+            self._query.validate(value, self.name)
 
         try:
             for validator in self._field_validators:
@@ -731,6 +728,3 @@ class MiniField(_MiniFieldBase):
         if not callable(func):
             raise TypeError("PreFormat callback '{}' is not callable.".format(func))
         self._preformat_callbacks.add(func)
-
-    def set_field_value(self, instance: "BaseModel", value) -> None:
-        instance.__dict__[self.private_name] = value

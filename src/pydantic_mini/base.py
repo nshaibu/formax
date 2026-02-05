@@ -245,9 +245,10 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        _disable_all_validation = config.get_non_dataclass_config().get(
-            "disable_all_validation", False
-        )
+        config_dict = config.get_non_dataclass_config()
+
+        disable_all_validation = config_dict.get("disable_all_validation", False)
+        disable_type_check = config_dict.get("disable_type_check", False)
 
         for field_name, annotation, value in cls.get_fields(attrs):
             if not isinstance(field_name, str) or not field_name.isidentifier():
@@ -289,10 +290,15 @@ class SchemaMeta(type):
                         else:
                             actual_type = object
                     annotation = MiniAnnotated[actual_type, Attrib()]
-                    attrs[field_name] = MiniField(field_name, annotation, value_field)
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
+                    disable_type_check = True
+
+                if disable_all_validation:
                     attrs[field_name] = DisableAllValidationMiniField(field_name, annotation, value_field)
+                else:
+                    attrs[field_name] = MiniField(field_name, annotation, value_field, disable_type_check=disable_type_check)
+
                 continue
 
             if not is_mini_annotated(annotation):
@@ -340,12 +346,12 @@ class SchemaMeta(type):
 
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
-            if _disable_all_validation:
+            if disable_all_validation:
                 mini_field = DisableAllValidationMiniField(
                     field_name, annotation, value_field
                 )
             else:
-                mini_field = MiniField(field_name, annotation, value_field)
+                mini_field = MiniField(field_name, annotation, value_field, disable_type_check=disable_type_check)
 
                 if field_name in validators:
                     for validator_func in validators[field_name]:
