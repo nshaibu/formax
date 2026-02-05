@@ -32,7 +32,6 @@ def test_complete_workflow():
     assert task.priority == Priority.LOW
 
     json_data = task.dump(_format="json")
-    print(json_data)
 
     loaded = Task.loads(json_data, _format="json")
     assert loaded.title == "Test"
