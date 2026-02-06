@@ -471,12 +471,12 @@ class PreventOverridingMixin:
             if config.disable_all_validation:
                 return
 
-            for attr_name in cls._protect:
-                if attr_name in cls.__dict__:
-                    raise PermissionError(
-                        f"Model '{cls.__name__}' cannot override {attr_name!r}. "
-                        f"Consider using __model_init__ for all your custom initialization"
-                    )
+            # for attr_name in cls._protect:
+            #     if attr_name in cls.__dict__:
+            #         raise PermissionError(
+            #             f"Model '{cls.__name__}' cannot override {attr_name!r}. "
+            #             f"Consider using __model_init__ for all your custom initialization"
+            #         )
         super().__init_subclass__(**kwargs)
 
 
