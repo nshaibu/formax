@@ -463,7 +463,7 @@ class SchemaMeta(type):
 
 class PreventOverridingMixin:
 
-    _protect = ["__init__1"]
+    _protect = ["__init__"]
 
     def __init_subclass__(cls: "BaseModel", **kwargs):
         if cls.__name__ != "BaseModel":
