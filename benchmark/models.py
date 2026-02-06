@@ -88,7 +88,7 @@ class FlatDisableAllValidationProfileMini(BaseModel):
     active: bool
 
     class Config:
-        disable_all_validations = True
+        disable_all_validation = True
 
 
 class FlatDisableTypeCheckProfileMini(BaseModel):
