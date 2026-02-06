@@ -2,7 +2,7 @@ import typing
 import keyword
 import inspect
 from collections import OrderedDict
-from dataclasses import dataclass, Field, field, MISSING
+from dataclasses import dataclass, Field, field, MISSING, fields
 from .formatters import BaseModelFormatter
 from .typing import (
     is_mini_annotated,
@@ -20,6 +20,8 @@ from .typing import (
     ValidatorType,
     PreFormatType,
 )
+from .utils import make_private_field
+from .make_init import make_disable_all_validation_init
 from .exceptions import ValidationError
 from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
 
@@ -27,6 +29,30 @@ from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniF
 __all__ = ("BaseModel",)
 
 PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
+
+_DATACLASS_CONFIG_PARAMS = '__dataclass_params__'
+
+
+def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
+    dc_fields = set([name for name in attrs.get("__annotations__", [])])
+    slots: typing.Union[str, typing.Tuple[str]] = attrs.get("__slots__")
+    if not slots:
+        return
+
+    if isinstance(slots, str):
+        slots = (slots,)
+    else:
+        slots = tuple(slots)
+
+    private_slots = []
+
+    for fd in dc_fields:
+        private_name = make_private_field(fd)
+        if private_name not in slots:
+            private_slots.append(private_name)
+
+    if private_slots:
+        attrs["__slots__"] = tuple(private_slots) + slots
 
 
 def compile_callbacks(
@@ -76,16 +102,24 @@ class SchemaMeta(type):
         new_attrs["__preformatters__"] = preformatters
 
         config = cls._prepare_model_fields(new_attrs, validators, preformatters)
-
-        new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
+        dataclass_config: typing.Dict[str, typing.Any] = config.get_dataclass_config()
 
         non_dataclass_config: typing.Dict[str, typing.Any] = (
             config.get_non_dataclass_config()
         )
 
+        if non_dataclass_config["disable_all_validation"]:
+            dataclass_config["init"] = False
+            new_attrs["__init__"] = make_disable_all_validation_init(new_attrs)
+
+        if dataclass_config["frozen"]:
+            _add_private_attr_slots(new_attrs)
+
+        new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
+
         setattr(new_class, PYDANTIC_MINI_EXTRA_MODEL_CONFIG, non_dataclass_config)
 
-        new_class = dataclass(new_class, **config.get_dataclass_config())  # type: ignore
+        new_class = dataclass(new_class, **dataclass_config)  # type: ignore
 
         # Let's activate the fields for type checking
         if not non_dataclass_config["disable_all_validation"]:
@@ -429,10 +463,14 @@ class SchemaMeta(type):
 
 class PreventOverridingMixin:
 
-    _protect = ["__init__"]
+    _protect = ["__init__1"]
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls: "BaseModel", **kwargs):
         if cls.__name__ != "BaseModel":
+            config = cls._get_pydantic_mini_config()
+            if config.disable_all_validation:
+                return
+
             for attr_name in cls._protect:
                 if attr_name in cls.__dict__:
                     raise PermissionError(
@@ -467,3 +505,11 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
 
     def dump(self, _format: str) -> typing.Any:
         return self.get_formatter_by_name(_format).decode(instance=self)
+
+    @classmethod
+    def _get_pydantic_mini_config(cls) -> ModelConfigWrapper:
+        config_class = getattr(cls, "Config", None)
+        config = ModelConfigWrapper(config_class)
+        return config
+
+

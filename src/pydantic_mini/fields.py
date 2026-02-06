@@ -3,9 +3,6 @@ import inspect
 from enum import Enum
 from dataclasses import fields as dc_fields, Field, MISSING, is_dataclass
 from typing import ForwardRef
-
-from typing_extensions import override
-
 from .typing import (
     is_mini_annotated,
     get_type,
@@ -21,6 +18,7 @@ from .typing import (
     PreFormatType,
     resolve_and_cache_forward_ref,
 )
+from .utils import make_private_field
 from .exceptions import ValidationError
 
 if typing.TYPE_CHECKING:
@@ -374,7 +372,7 @@ class _MiniFieldBase:
                 params={"field": name, "annotation": mini_annotated},
             )
         self.name = name
-        self.private_name = f"_{name}"
+        self.private_name = make_private_field(name)
 
         # type decomposition
         self._mini_annotated_type = mini_annotated
@@ -475,7 +473,7 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         disable_type_check: bool = False,
     ):
         self.name = name
-        self.private_name = f"_{name}"
+        self.private_name = make_private_field(name)
 
         self._query: Attrib = mini_annotated.__metadata__[0]
 

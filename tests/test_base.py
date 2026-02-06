@@ -483,7 +483,7 @@ class TestBase(unittest.TestCase):
         person = Person(names=["a", "b", "c"])
         self.assertEqual(person.names, ["a", "b", "c"])
 
-    def test_overridden_init_and_post_init_raises_permissionerror(self):
+    def test_overridden_init_raises_permissionerror(self):
         with self.assertRaises(PermissionError):
 
             class Person(BaseModel):
@@ -491,14 +491,6 @@ class TestBase(unittest.TestCase):
 
                 def __init__(self, names):
                     self.names = names
-
-        # with self.assertRaises(PermissionError):
-        #
-        #     class Person1(BaseModel):
-        #         names: typing.List[str]
-        #
-        #         def __post_init__(self):
-        #             pass
 
     def test_model_can_be_configured(self):
         class Person(BaseModel):
@@ -558,3 +550,30 @@ class TestBase(unittest.TestCase):
             Person.loads(
                 {"name": "nafiu", "location": {"name": "kumasi"}}, _format="dict"
             )
+
+    def test_frozen_class_can_be_initialised(self):
+        class FrozenUser(BaseModel):
+            name: str
+            age: int
+
+            class Config:
+                frozen = True
+
+        class NonFrozenUser(BaseModel):
+            name: str
+            age: int
+
+        frozen_user = FrozenUser("name", 12)
+        non_frozen_user = NonFrozenUser("name", 12)
+
+        self.assertEqual(frozen_user.name, "name")
+        self.assertEqual(frozen_user.age, 12)
+
+        self.assertEqual(non_frozen_user.name, "name")
+        self.assertEqual(non_frozen_user.age, 12)
+
+        non_frozen_user.school = "knust"
+        self.assertEqual(non_frozen_user.school, "knust")
+
+        with self.assertRaises(AttributeError):
+            frozen_user.school = "knust"
