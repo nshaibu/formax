@@ -69,7 +69,7 @@ class DisableAllValidationMini(BaseModel):
     profile: ProfileMini
 
     class Config:
-        disable_all_validations = True
+        disable_all_validation = True
 
 
 class DisableTypeCheckMini(BaseModel):
