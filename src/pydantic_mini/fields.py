@@ -427,6 +427,21 @@ class _MiniFieldBase:
 
         return value
 
+    def run_validators(self, instance: "BaseModel", value: typing.Any) -> typing.Any:
+        if self._field_validator:
+            try:
+                status = self._field_validator(instance, value)
+                if status is False:
+                    raise ValidationError(
+                        "Validation of field '{}' with value '{}' failed.".format(
+                            self.name, value
+                        )
+                    )
+            except Exception as e:
+                if isinstance(e, ValidationError):
+                    raise
+                raise ValidationError("Validation error") from e
+
     def _init_type_expectations(
         self,
         instance: "BaseModel",
@@ -608,24 +623,12 @@ class MiniField(_MiniFieldBase):
             coerced_value = self._value_coerce(value)
             if coerced_value is not None:
                 value = coerced_value
-            self._field_type_validator(value, instance)
+            self._field_type_validator(value)
         else:
             # run other field validators when type checking is disabled
             self._query.validate(value, self.name)
 
-        if self._field_validator:
-            try:
-                status = self._field_validator(instance, value)
-                if status is False:
-                    raise ValidationError(
-                        "Validation of field '{}' with value '{}' failed.".format(
-                            self.name, value
-                        )
-                    )
-            except Exception as e:
-                if isinstance(e, ValidationError):
-                    raise
-                raise ValidationError("Validation error") from e
+        self.run_validators(instance, value)
 
         instance.__dict__[self.private_name] = value
         return None
@@ -659,7 +662,7 @@ class MiniField(_MiniFieldBase):
 
         return None
 
-    def _field_type_validator(self, value: typing.Any, instance: "BaseModel") -> None:
+    def _field_type_validator(self, value: typing.Any) -> None:
         if self.is_collection:
             if self.inner_type:
                 old_strict_mode = self.inner_type._strict_model

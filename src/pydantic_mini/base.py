@@ -21,7 +21,7 @@ from .typing import (
     PreFormatType,
 )
 from .utils import make_private_field
-from .make_init import make_disable_all_validation_init
+from .make_init import make_disable_all_validation_init, make_disable_type_check_init
 from .exceptions import ValidationError
 from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
 
@@ -30,7 +30,7 @@ __all__ = ("BaseModel",)
 
 PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
 
-_DATACLASS_CONFIG_PARAMS = '__dataclass_params__'
+_DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
 
 def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
@@ -108,7 +108,11 @@ class SchemaMeta(type):
             config.get_non_dataclass_config()
         )
 
-        if non_dataclass_config["disable_all_validation"]:
+        if non_dataclass_config["disable_typecheck"]:
+            dataclass_config["init"] = False
+            new_attrs["__init__"] = make_disable_type_check_init(new_attrs)
+
+        if not non_dataclass_config["disable_typecheck"] and non_dataclass_config["disable_all_validation"]:
             dataclass_config["init"] = False
             new_attrs["__init__"] = make_disable_all_validation_init(new_attrs)
 
@@ -511,5 +515,3 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
         config_class = getattr(cls, "Config", None)
         config = ModelConfigWrapper(config_class)
         return config
-
-
