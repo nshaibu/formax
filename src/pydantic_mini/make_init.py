@@ -5,7 +5,7 @@ from .fields import MiniField, DisableAllValidationMiniField
 from .utils import make_private_field
 
 
-def join_string(str_list: typing.List[str], sep: str=", ") -> str:
+def join_string(str_list: typing.List[str], sep: str = ",") -> str:
     """Combine strings separated by sep."""
     if not str_list:
         return ""
@@ -36,7 +36,7 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
     default_params_str = join_string(default_params)
     params_str = join_string(params)
 
-    return f"def __init__(self, {params_str} {default_params_str}):"
+    return f"def __init__(self, {params_str} {default_params_str[:-1]}):"
 
 
 def _post_init_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
@@ -180,22 +180,22 @@ def _fast_init_body(
                 # condition for coercing values
                 mini_statement += f"\tcoerced_{field_name} = {mini_field_name}._value_coerce(coerced_{field_name}_value)\n"
                 mini_statement += f"\tif coerced_{field_name} is not None:\n"
-                mini_statement += f"\t\tcoerced_{field_name}_value = coerced_{field_name}\n\n"
+                mini_statement += (
+                    f"\t\tcoerced_{field_name}_value = coerced_{field_name}\n\n"
+                )
 
                 # validate value
-                mini_statement += (
-                    f"\t{mini_field_name}._field_type_validator(coerced_{field_name}_value)\n"
-                )
+                mini_statement += f"\t{mini_field_name}._field_type_validator(coerced_{field_name}_value)\n"
             else:
                 # for when a field is annotated with typing.Any
                 mini_statement += f"\t{mini_field_name}._query.validate(coerced_{field_name}_value, {field_name!r})\n"
 
-            mini_statement += (
-                f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
-            )
+            mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
 
         private_name = make_private_field(field_name)
-        mini_statement += f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
+        mini_statement += (
+            f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
+        )
         body.append(mini_statement)
 
     code = "\n".join(body)
@@ -212,7 +212,6 @@ def make_fast_init(
     code = "\n".join(statements)
 
     local_ns = {}
-    # import pdb;pdb.set_trace()
 
     exec(code, cbs, local_ns)
 

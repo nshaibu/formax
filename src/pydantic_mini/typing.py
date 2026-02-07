@@ -97,8 +97,9 @@ _resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
 
 
 class InitStrategy(Enum):
-    DATACLASS = auto()   # default dataclass __init__
-    FAST = auto()        # codegen __init__ (batch assignment)
+    DATACLASS = auto()  # default dataclass __init__
+    FAST = auto()  # codegen __init__ (batch assignment)
+    CUSTOM = auto()  # user-defined __init__
 
 
 class ValidationFlags(IntFlag):
@@ -122,7 +123,7 @@ class ValidationFlags(IntFlag):
 
 class ModelConfigWrapper:
     # Standard dataclass config
-    init: bool = True
+    # init: bool = True
     repr: bool = True
     eq: bool = True
     order: bool = False
@@ -132,10 +133,6 @@ class ModelConfigWrapper:
     # pydantic-mini specific config
 
     strict_mode: bool = False  # if true, don't coerce values
-
-    # If true, all forward references are treated as typing.Any.
-    # This, therefore, disables all validations for the field
-    forward_refs_as_any: bool = False
 
     # If true, disable type check but apply all custom validators
     disable_typecheck: bool = False
@@ -149,8 +146,11 @@ class ModelConfigWrapper:
     # Validation control
     validation: ValidationFlags = ValidationFlags.VALIDATED
 
-    # # Other options
-    # forward_refs_as_any: bool = False
+    # Other options
+
+    # If true, all forward references are treated as typing.Any.
+    # This, therefore, disables all validations for the field
+    forward_refs_as_any: bool = False
 
     def __init__(self, config: typing.Type):
         self.config = config

@@ -19,6 +19,8 @@ from .typing import (
     dataclass_transform,
     ValidatorType,
     PreFormatType,
+    ValidationFlags,
+    InitStrategy,
 )
 from .utils import make_private_field
 from .make_init import (
@@ -35,6 +37,12 @@ __all__ = ("BaseModel",)
 PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
 
 _DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
+
+
+def _generate_fast_init(
+    attrs: typing.Dict[str, typing.Any], flags: ValidationFlags
+) -> typing.Callable[[typing.Any], typing.Any]:
+    pass
 
 
 def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
@@ -112,17 +120,14 @@ class SchemaMeta(type):
             config.get_non_dataclass_config()
         )
 
-        # if non_dataclass_config["disable_typecheck"]:
-        dataclass_config["init"] = False
-        # new_attrs["__init__"] = make_disable_type_check_init(new_attrs)
-        new_attrs["__init__"] = make_fast_init(new_attrs)
-
-        # if (
-        #     not non_dataclass_config["disable_typecheck"]
-        #     and non_dataclass_config["disable_all_validation"]
-        # ):
-        #     dataclass_config["init"] = False
-        #     new_attrs["__init__"] = make_disable_all_validation_init(new_attrs)
+        if config.init_strategy == InitStrategy.FAST:
+            dataclass_config["init"] = False
+            fast_init = _generate_fast_init(new_attrs, config.validation)
+            new_attrs["__init__"] = fast_init
+        elif config.init_strategy == InitStrategy.CUSTOM:
+            dataclass_config["init"] = False
+        else:
+            dataclass_config["init"] = True
 
         if dataclass_config["frozen"]:
             _add_private_attr_slots(new_attrs)
@@ -480,15 +485,15 @@ class PreventOverridingMixin:
     def __init_subclass__(cls: "BaseModel", **kwargs):
         if cls.__name__ != "BaseModel":
             config = cls._get_pydantic_mini_config()
-            if config.disable_all_validation:
+            if config.init_strategy in [InitStrategy.FAST, InitStrategy.CUSTOM]:
                 return
 
-            # for attr_name in cls._protect:
-            #     if attr_name in cls.__dict__:
-            #         raise PermissionError(
-            #             f"Model '{cls.__name__}' cannot override {attr_name!r}. "
-            #             f"Consider using __model_init__ for all your custom initialization"
-            #         )
+            for attr_name in cls._protect:
+                if attr_name in cls.__dict__:
+                    raise PermissionError(
+                        f"Model '{cls.__name__}' cannot override {attr_name!r}. "
+                        f"Consider using __model_init__ for all your custom initialization"
+                    )
         super().__init_subclass__(**kwargs)
 
 
@@ -504,6 +509,10 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
     # These are populated by the metaclass
     __validators__: typing.Dict[str, typing.List[ValidatorType]]
     __preformatters__: typing.Dict[str, typing.List[PreFormatType]]
+
+    class Config:
+        validation = ValidationFlags.VALIDATED
+        init_strategy = InitStrategy.DATACLASS
 
     @staticmethod
     def get_formatter_by_name(name: str) -> BaseModelFormatter:
@@ -521,5 +530,4 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
     @classmethod
     def _get_pydantic_mini_config(cls) -> ModelConfigWrapper:
         config_class = getattr(cls, "Config", None)
-        config = ModelConfigWrapper(config_class)
-        return config
+        return ModelConfigWrapper(config_class)
