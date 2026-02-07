@@ -129,7 +129,7 @@ class SchemaMeta(type):
 
         if config.init_strategy == InitStrategy.FAST:
             dataclass_config["init"] = False
-            fast_init = _generate_fast_init(new_attrs, config.validation)
+            fast_init = _generate_fast_init(new_attrs, config, config.validation)
             new_attrs["__init__"] = fast_init
         elif config.init_strategy == InitStrategy.CUSTOM:
             dataclass_config["init"] = False

@@ -141,7 +141,7 @@ class ModelConfigWrapper:
     disable_all_validation: bool = False
 
     # Init strategy
-    init_strategy: InitStrategy = InitStrategy.DATACLASS
+    init_strategy: InitStrategy = InitStrategy.FAST
 
     # Validation control
     validation: ValidationFlags = ValidationFlags.VALIDATED
