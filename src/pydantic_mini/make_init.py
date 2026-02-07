@@ -1,7 +1,7 @@
 import typing
 from dataclasses import MISSING
 
-from .fields import MiniField, DisableAllValidationMiniField
+from .fields import MiniField
 from .utils import make_private_field
 
 

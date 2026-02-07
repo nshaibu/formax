@@ -152,8 +152,20 @@ class ModelConfigWrapper:
     # This, therefore, disables all validations for the field
     forward_refs_as_any: bool = False
 
-    def __init__(self, config: typing.Type):
+    def __init__(self, config: typing.Type[typing.Any]):
         self.config = config
+
+    @staticmethod
+    def coerce(flags: ValidationFlags) -> bool:
+        return bool(flags & ValidationFlags.COERCE)
+
+    @staticmethod
+    def typecheck(flags: ValidationFlags) -> bool:
+        return bool(flags & ValidationFlags.TYPECHECK)
+
+    @staticmethod
+    def all_validation(flags: ValidationFlags) -> bool:
+        return bool(flags & ValidationFlags.VALIDATED)
 
     def get_config(self, name: str) -> typing.Any:
         if self.config and hasattr(self.config, name):
