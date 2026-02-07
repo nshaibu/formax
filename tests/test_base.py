@@ -99,10 +99,10 @@ class TestBase(unittest.TestCase):
         self.assertEqual(p2.school, "knust")
 
         # validate positional arguments are required
-        with self.assertRaises(AttributeError):
+        with self.assertRaises((AttributeError, TypeError)):
             Person(name="nafiu")
 
-        with self.assertRaises(AttributeError):
+        with self.assertRaises((AttributeError, TypeError)):
             Person1(school="knust")
 
     def test_figured_out_optional_field_from_annotation_has_none_value(self):

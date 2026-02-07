@@ -21,7 +21,11 @@ from .typing import (
     PreFormatType,
 )
 from .utils import make_private_field
-from .make_init import make_disable_all_validation_init, make_disable_type_check_init
+from .make_init import (
+    make_disable_all_validation_init,
+    make_disable_type_check_init,
+    make_fast_init,
+)
 from .exceptions import ValidationError
 from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
 
@@ -108,13 +112,17 @@ class SchemaMeta(type):
             config.get_non_dataclass_config()
         )
 
-        if non_dataclass_config["disable_typecheck"]:
-            dataclass_config["init"] = False
-            new_attrs["__init__"] = make_disable_type_check_init(new_attrs)
+        # if non_dataclass_config["disable_typecheck"]:
+        dataclass_config["init"] = False
+        # new_attrs["__init__"] = make_disable_type_check_init(new_attrs)
+        new_attrs["__init__"] = make_fast_init(new_attrs)
 
-        if not non_dataclass_config["disable_typecheck"] and non_dataclass_config["disable_all_validation"]:
-            dataclass_config["init"] = False
-            new_attrs["__init__"] = make_disable_all_validation_init(new_attrs)
+        # if (
+        #     not non_dataclass_config["disable_typecheck"]
+        #     and non_dataclass_config["disable_all_validation"]
+        # ):
+        #     dataclass_config["init"] = False
+        #     new_attrs["__init__"] = make_disable_all_validation_init(new_attrs)
 
         if dataclass_config["frozen"]:
             _add_private_attr_slots(new_attrs)

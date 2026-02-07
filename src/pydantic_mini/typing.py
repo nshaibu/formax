@@ -6,6 +6,7 @@ import types
 import typing
 import inspect
 import collections
+from enum import IntFlag, Enum, auto
 from dataclasses import MISSING, InitVar
 
 if sys.version_info >= (3, 11):
@@ -95,7 +96,32 @@ _NON_DATACLASS_CONFIG_FIELD: typing.List[str] = [
 _resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
 
 
+class InitStrategy(Enum):
+    DATACLASS = auto()   # default dataclass __init__
+    FAST = auto()        # codegen __init__ (batch assignment)
+
+
+class ValidationFlags(IntFlag):
+    """Bitwise flags for validation control."""
+
+    # Core validation components
+    TYPECHECK = 1 << 0  # 0b001 = 1 - Type checking (isinstance)
+    COERCE = 1 << 1  # 0b010 = 2  - Type coercion ("123" → 123)
+
+    # Note: PREFORMATTERS always run (not a flag - they're data normalization)
+
+    # Convenience combinations
+    NONE = 0  # No validation at all
+    ALL = TYPECHECK | COERCE  # Full validation
+
+    # Common presets
+    STRICT = TYPECHECK  # No coercion, but validate
+    VALIDATED = ALL  # Full validation (default)
+    TYPECHECK_ONLY = TYPECHECK | COERCE  # Type safety only
+
+
 class ModelConfigWrapper:
+    # Standard dataclass config
     init: bool = True
     repr: bool = True
     eq: bool = True
@@ -116,6 +142,15 @@ class ModelConfigWrapper:
 
     # If true, disable all validations
     disable_all_validation: bool = False
+
+    # Init strategy
+    init_strategy: InitStrategy = InitStrategy.DATACLASS
+
+    # Validation control
+    validation: ValidationFlags = ValidationFlags.VALIDATED
+
+    # # Other options
+    # forward_refs_as_any: bool = False
 
     def __init__(self, config: typing.Type):
         self.config = config
