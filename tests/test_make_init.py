@@ -161,6 +161,7 @@ def test_fast_init_assigns_private_fields():
 
     assert m.__dict__[make_private_field("x")] == 42
 
+
 def test_fast_init_runs_full_pipeline():
     calls = []
 

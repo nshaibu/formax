@@ -156,15 +156,15 @@ class ModelConfigWrapper:
         self.config = config
 
     @staticmethod
-    def coerce(flags: ValidationFlags) -> bool:
+    def should_coerce(flags: ValidationFlags) -> bool:
         return bool(flags & ValidationFlags.COERCE)
 
     @staticmethod
-    def typecheck(flags: ValidationFlags) -> bool:
+    def check_data_type(flags: ValidationFlags) -> bool:
         return bool(flags & ValidationFlags.TYPECHECK)
 
     @staticmethod
-    def all_validation(flags: ValidationFlags) -> bool:
+    def check_all_validations(flags: ValidationFlags) -> bool:
         return bool(flags & ValidationFlags.VALIDATED)
 
     def get_config(self, name: str) -> typing.Any:

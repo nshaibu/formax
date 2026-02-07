@@ -40,9 +40,16 @@ _DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
 
 def _generate_fast_init(
-    attrs: typing.Dict[str, typing.Any], flags: ValidationFlags
+    attrs: typing.Dict[str, typing.Any],
+    config: ModelConfigWrapper,
+    flags: ValidationFlags,
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    pass
+    if not config.check_data_type(flags):
+        return make_disable_type_check_init(attrs)
+    elif not config.check_all_validations(flags):
+        return make_disable_all_validation_init(attrs)
+
+    return make_fast_init(attrs)
 
 
 def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
@@ -512,7 +519,7 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
 
     class Config:
         validation = ValidationFlags.VALIDATED
-        init_strategy = InitStrategy.DATACLASS
+        init_strategy = InitStrategy.FAST
 
     @staticmethod
     def get_formatter_by_name(name: str) -> BaseModelFormatter:
