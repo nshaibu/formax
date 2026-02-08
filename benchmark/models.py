@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from typing import List
 
-from pydantic_mini import BaseModel
+from pydantic_mini import BaseModel, ValidationFlags
 
 
 DATA = {
@@ -69,7 +69,7 @@ class DisableAllValidationMini(BaseModel):
     profile: ProfileMini
 
     class Config:
-        disable_all_validation = True
+        validation = ValidationFlags.NONE
 
 
 class DisableTypeCheckMini(BaseModel):
@@ -78,7 +78,7 @@ class DisableTypeCheckMini(BaseModel):
     profile: ProfileMini
 
     class Config:
-        disable_type_check = True
+        validation = ValidationFlags.COERCE
 
 
 class FlatDisableAllValidationProfileMini(BaseModel):
@@ -88,7 +88,7 @@ class FlatDisableAllValidationProfileMini(BaseModel):
     active: bool
 
     class Config:
-        disable_all_validation = True
+        validation = ValidationFlags.NONE
 
 
 class FlatDisableTypeCheckProfileMini(BaseModel):
@@ -98,4 +98,4 @@ class FlatDisableTypeCheckProfileMini(BaseModel):
     active: bool
 
     class Config:
-        disable_type_check = True
+        validation = ValidationFlags.COERCE
