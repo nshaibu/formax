@@ -1,4 +1,5 @@
 import pytest
+import typing
 from pydantic_mini import BaseModel, validator, preformat
 from pydantic_mini.exceptions import ValidationError
 
@@ -65,7 +66,6 @@ def test_single_field_preformatter():
 
 def test_validator_with_typing_any():
     """Test validators skip for typing.Any fields."""
-    import typing
 
     class Model(BaseModel):
         validated: int
@@ -87,7 +87,7 @@ def test_validator_with_typing_any():
 
 def test_nested_model_validation():
     """Test validators work with nested models."""
-
+    # import pdb;pdb.set_trace()
     class Inner(BaseModel):
         value: int
 

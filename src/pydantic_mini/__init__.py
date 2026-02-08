@@ -22,7 +22,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 __version__ = "1.2.0"
 
 from .base import BaseModel
-from .typing import Attrib, MiniAnnotated
+from .typing import Attrib, MiniAnnotated, ValidationFlags, InitStrategy
 from .exceptions import ValidationError
 from .decorators import validator, preformat
 
@@ -34,4 +34,6 @@ __all__ = [
     "ValidationError",
     "validator",
     "preformat",
+    "ValidationFlags",
+    "InitStrategy",
 ]

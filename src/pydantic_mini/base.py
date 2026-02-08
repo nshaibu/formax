@@ -22,7 +22,7 @@ from .typing import (
     ValidationFlags,
     InitStrategy,
 )
-from .utils import make_private_field
+from .utils import make_private_field, PYDANTIC_MINI_MODEL_CONFIG, PYDANTIC_MINI_SIGNATURE_MATCHER
 from .make_init import (
     make_disable_all_validation_init,
     make_disable_type_check_init,
@@ -34,19 +34,15 @@ from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniF
 
 __all__ = ("BaseModel",)
 
-PYDANTIC_MINI_EXTRA_MODEL_CONFIG = "__pydantic_mini_extra_config__"
-
-_DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
 
 def _generate_fast_init(
     attrs: typing.Dict[str, typing.Any],
     config: ModelConfigWrapper,
-    flags: ValidationFlags,
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    if not config.check_data_type(flags):
+    if not config.validation == ValidationFlags.TYPECHECK:
         return make_disable_type_check_init(attrs)
-    elif not config.check_all_validations(flags):
+    elif not config.validation == ValidationFlags.NONE:
         return make_disable_all_validation_init(attrs)
 
     return make_fast_init(attrs)
@@ -121,33 +117,30 @@ class SchemaMeta(type):
         new_attrs["__preformatters__"] = preformatters
 
         config = cls._prepare_model_fields(new_attrs, validators, preformatters)
-        dataclass_config: typing.Dict[str, typing.Any] = config.get_dataclass_config()
-
-        non_dataclass_config: typing.Dict[str, typing.Any] = (
-            config.get_non_dataclass_config()
-        )
+        dataclass_config: typing.Dict[str, typing.Any] = config.as_dataclass_kwargs()
 
         if config.init_strategy == InitStrategy.FAST:
             dataclass_config["init"] = False
-            fast_init = _generate_fast_init(new_attrs, config, config.validation)
+            fast_init = _generate_fast_init(new_attrs, config)
             new_attrs["__init__"] = fast_init
         elif config.init_strategy == InitStrategy.CUSTOM:
             dataclass_config["init"] = False
+            if '__init__' not in new_attrs:
+                raise KeyError("'__init__' is not defined for class '{}'".format(name))
         else:
             dataclass_config["init"] = True
 
         if dataclass_config["frozen"]:
             _add_private_attr_slots(new_attrs)
 
-        new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
+        new_attrs[PYDANTIC_MINI_MODEL_CONFIG] = config
 
-        setattr(new_class, PYDANTIC_MINI_EXTRA_MODEL_CONFIG, non_dataclass_config)
+        new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
 
         new_class = dataclass(new_class, **dataclass_config)  # type: ignore
 
         # Let's activate the fields for type checking
-        if not non_dataclass_config["disable_all_validation"]:
-
+        if config.should_typecheck():
             for field_name in new_attrs.get("__annotations__", {}):
                 mini_field = new_attrs.get(field_name, None)
                 if isinstance(mini_field, MiniField):
@@ -155,11 +148,10 @@ class SchemaMeta(type):
                     mini_field._init_type_expectations(
                         new_class,
                         resolve_forward_ref=False,
-                        model_config=non_dataclass_config,
                     )
 
         matcher = _ClassSignatureMatcher(new_class)
-        setattr(new_class, "__signature_matcher__", matcher)
+        setattr(new_class, PYDANTIC_MINI_SIGNATURE_MATCHER, matcher)
 
         return new_class
 
@@ -337,10 +329,12 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        config_dict = config.get_non_dataclass_config()
+        # config_dict = config.get_non_dataclass_config()
 
-        disable_all_validation = config_dict.get("disable_all_validation", False)
-        disable_type_check = config_dict.get("disable_type_check", False)
+        # disable_all_validation = config_dict.get("disable_all_validation", False)
+        # disable_type_check = config_dict.get("disable_type_check", False)
+
+        disable_all_validation = config.validation == ValidationFlags.NONE
 
         for field_name, annotation, value in cls.get_fields(attrs):
             if not isinstance(field_name, str) or not field_name.isidentifier():
@@ -358,7 +352,7 @@ class SchemaMeta(type):
 
                 if annotation is None:
                     raise TypeError(
-                        f"Field '{field_name}' does not have type annotation. "
+                        f"Field {field_name!r} does not have type annotation. "
                         f"Figuring out field type from default value failed"
                     )
 
@@ -384,18 +378,17 @@ class SchemaMeta(type):
                     annotation = MiniAnnotated[actual_type, Attrib()]
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
-                    disable_type_check = True
 
                 if disable_all_validation:
                     attrs[field_name] = DisableAllValidationMiniField(
-                        field_name, annotation, value_field
+                        field_name, annotation, config, value_field
                     )
                 else:
                     attrs[field_name] = MiniField(
                         field_name,
                         annotation,
+                        config,
                         value_field,
-                        disable_type_check=disable_type_check,
                     )
 
                 continue
@@ -453,14 +446,14 @@ class SchemaMeta(type):
 
             if disable_all_validation:
                 mini_field = DisableAllValidationMiniField(
-                    field_name, annotation, value_field
+                    field_name, annotation, config, value_field
                 )
             else:
                 mini_field = MiniField(
                     field_name,
                     annotation,
-                    value_field,
-                    disable_type_check=disable_type_check,
+                    config,
+                    value_field
                 )
 
                 if field_name in validators:
@@ -491,7 +484,7 @@ class PreventOverridingMixin:
 
     def __init_subclass__(cls: "BaseModel", **kwargs):
         if cls.__name__ != "BaseModel":
-            config = cls._get_pydantic_mini_config()
+            config = cls.get_pydantic_mini_config()
             if config.init_strategy in [InitStrategy.FAST, InitStrategy.CUSTOM]:
                 return
 
@@ -535,6 +528,5 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
         return self.get_formatter_by_name(_format).decode(instance=self)
 
     @classmethod
-    def _get_pydantic_mini_config(cls) -> ModelConfigWrapper:
-        config_class = getattr(cls, "Config", None)
-        return ModelConfigWrapper(config_class)
+    def get_pydantic_mini_config(cls) -> ModelConfigWrapper:
+        return getattr(cls, PYDANTIC_MINI_MODEL_CONFIG, None)

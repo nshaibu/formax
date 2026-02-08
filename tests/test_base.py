@@ -2,7 +2,15 @@ import unittest
 import typing
 from unittest.mock import patch
 from dataclasses import field, InitVar
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, preformat, validator
+from pydantic_mini import (
+    BaseModel,
+    MiniAnnotated,
+    Attrib,
+    preformat,
+    validator,
+    ValidationFlags,
+    InitStrategy,
+)
 from pydantic_mini.exceptions import ValidationError
 
 
@@ -35,7 +43,9 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                disable_all_validation = True
+                # disable_all_validation = True
+                # init_strategy: InitStrategy = InitStrategy.DATACLASS
+                validation = ValidationFlags.NONE
 
         class DisabledTypeCheckValidationClass(BaseModel):
             email: MiniAnnotated[
@@ -44,7 +54,9 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                disable_typecheck = True
+                # disable_typecheck = True
+                # init_strategy: InitStrategy = InitStrategy.DATACLASS
+                validation = ValidationFlags.COERCE
 
         cls.MyModel = MyModel
         cls.DataClassField = DataClassField
@@ -358,7 +370,7 @@ class TestBase(unittest.TestCase):
             location: typing.Union[int, str]
 
             class Config:
-                strict_mode = True
+                validation = ValidationFlags.TYPECHECK
 
         person = Person(name="nafiu", location="kumasi")
         self.assertEqual(person.name, "nafiu")
@@ -544,7 +556,7 @@ class TestBase(unittest.TestCase):
             location: Location
 
             class Config:
-                strict_mode = True
+                validation = ValidationFlags.TYPECHECK
 
         with self.assertRaises(TypeError):
             Person.loads(

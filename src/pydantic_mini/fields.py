@@ -17,9 +17,11 @@ from .typing import (
     ValidatorType,
     PreFormatType,
     resolve_and_cache_forward_ref,
+    ModelConfigWrapper,
+    ValidationFlags
 )
-from .utils import make_private_field
 from .exceptions import ValidationError
+from .utils import make_private_field, PYDANTIC_MINI_MODEL_CONFIG, PYDANTIC_MINI_SIGNATURE_MATCHER, PYDANTIC_MINI_MODEL_CONTEXT
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
@@ -98,7 +100,7 @@ class _ExpectedType:
         self.is_builtin: bool = is_builtin_type(self.type)
         self.is_enum: bool = isinstance(self.type, type) and issubclass(self.type, Enum)
         self.is_model: bool = hasattr(
-            self.type, "__pydantic_mini_extra_config__"
+            self.type, PYDANTIC_MINI_MODEL_CONFIG
         ) or is_dataclass(self.type)
         self.is_class: bool = inspect.isclass(self.type)
 
@@ -163,7 +165,7 @@ class _ExpectedType:
 
     def get_signature_matcher(self) -> _ClassSignatureMatcher:
         if getattr(self, "signature_matcher", None) is None:
-            self.signature_matcher = getattr(self.type, "__signature_matcher__", None)
+            self.signature_matcher = getattr(self.type, PYDANTIC_MINI_SIGNATURE_MATCHER, None)
             if self.signature_matcher is None:
                 self.signature_matcher = _ClassSignatureMatcher(self.type)
         return self.signature_matcher
@@ -218,8 +220,9 @@ class _ExpectedType:
 class _ExpectedTypeResolver:
     __slots__ = (
         "_actual_types",
-        "_strict_model",
-        "_disable_type_check",
+        "model_config",
+        # "_strict_model",
+        # "_disable_type_check",
         "module_context",
         "_finalised",
     )
@@ -227,15 +230,17 @@ class _ExpectedTypeResolver:
     def __init__(
         self,
         actual_types: typing.Tuple[type],
-        strict_model: bool = False,
-        disable_type_check: bool = False,
+        model_config: ModelConfigWrapper,
+        # strict_model: bool = False,
+        # disable_type_check: bool = False,
         forward_refs_as_any: bool = False,
     ) -> None:
         """
         Validate and coerce datatype
         :param actual_types: Tuple of types to validate
-        :param strict_model: Validation model
-        :param disable_type_check: Whether to disable type check
+        :param model_config: Model configuration
+        # :param strict_model: Validation model
+        # :param disable_type_check: Whether to disable type check
         :param forward_refs_as_any: Whether to force forward refs
         """
         if not actual_types:
@@ -256,9 +261,10 @@ class _ExpectedTypeResolver:
 
         self._actual_types = sorted(self._actual_types, key=lambda t: t.order)
 
-        self._strict_model: bool = strict_model
-        self._disable_type_check = disable_type_check
+        # self._strict_model: bool = strict_model
+        # self._disable_type_check = disable_type_check
 
+        self.model_config = model_config
         self.module_context: typing.Dict[str, typing.Any] = {}
 
         self._finalised = False
@@ -268,8 +274,10 @@ class _ExpectedTypeResolver:
             return
 
         # Separated to speed-up called to finalize because there is no attribute
-        # update request for finalised resolver
-        if self._disable_type_check:
+        # update request for finalized resolver
+        config = self.model_config
+
+        if not config.should_typecheck():
             self._finalised = True
             return
 
@@ -314,13 +322,14 @@ class _ExpectedTypeResolver:
 
     def get_matching_type(self, value: typing.Any) -> typing.Optional[_ExpectedType]:
         """Determine which type best matches the value"""
+        config = self.model_config
 
         for expected_type in self._actual_types:
             if expected_type.isinstance_of(value):
                 return expected_type
 
         # coercion type detection section
-        if not self._strict_model:
+        if config.should_coerce():
             if isinstance(value, dict):
                 for expected_type in self._actual_types:
                     if expected_type.is_class and expected_type.matches(value):
@@ -356,6 +365,7 @@ class _MiniFieldBase:
         "_field_validator",
         "_preformat_callback",
         "model_context",
+        "model_config",
         "disable_type_check",
     )
 
@@ -363,8 +373,9 @@ class _MiniFieldBase:
         self,
         name: str,
         mini_annotated: Annotated,
+        model_config: ModelConfigWrapper,
         dc_field_obj: typing.Optional[Field] = None,
-        disable_type_check: bool = False,
+        # disable_type_check: bool = False,
     ):
         if not is_mini_annotated(mini_annotated):
             raise ValidationError(
@@ -373,6 +384,8 @@ class _MiniFieldBase:
             )
         self.name = name
         self.private_name = make_private_field(name)
+
+        self.model_config = model_config
 
         # type decomposition
         self._mini_annotated_type = mini_annotated
@@ -383,9 +396,9 @@ class _MiniFieldBase:
         self._preformat_callback: typing.Optional[PreFormatType] = None
 
         self.model_context: typing.Optional[typing.Dict[str, typing.Any]] = None
-        self.disable_type_check = disable_type_check
+        self.disable_type_check = not model_config.should_typecheck()
 
-        if self._actual_annotated_type is typing.Any and not disable_type_check:
+        if self._actual_annotated_type is typing.Any and not self.disable_type_check:
             self.disable_type_check = True
 
         # default value handler
@@ -446,7 +459,7 @@ class _MiniFieldBase:
         self,
         instance: "BaseModel",
         resolve_forward_ref: bool = True,
-        model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
+        # model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
     ):
         pass
 
@@ -484,8 +497,9 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         self,
         name: str,
         mini_annotated: Annotated,
+        model_config: ModelConfigWrapper,
         dc_field_obj: typing.Optional[Field] = None,
-        disable_type_check: bool = False,
+        # disable_type_check: bool = False,
     ):
         self.name = name
         self.private_name = make_private_field(name)
@@ -530,11 +544,12 @@ class MiniField(_MiniFieldBase):
         self,
         name: str,
         mini_annotated: Annotated,
+        model_config: ModelConfigWrapper,
         dc_field_obj: typing.Optional[Field] = None,
-        disable_type_check: bool = False,
+        # disable_type_check: bool = False,
     ):
         super().__init__(
-            name, mini_annotated, dc_field_obj, disable_type_check=disable_type_check
+            name, mini_annotated, model_config, dc_field_obj
         )
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
@@ -558,10 +573,12 @@ class MiniField(_MiniFieldBase):
         self,
         instance: "BaseModel",
         resolve_forward_ref: bool = True,
-        model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
+        # model_config: typing.Optional[typing.Dict[str, typing.Any]] = None,
     ):
-        if model_config is None:
-            model_config = {}
+        # if model_config is None:
+        #     model_config = {}
+
+        # strict_mode = not self.model_config.should_coerce(self.model_config.validation)
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(
@@ -573,8 +590,9 @@ class MiniField(_MiniFieldBase):
 
         self.expected_type = _ExpectedTypeResolver(
             actual_types=self.type_annotation_args,
-            strict_model=model_config.get("strict_mode", False),
-            disable_type_check=self.disable_type_check,
+            model_config=self.model_config,
+            # strict_model=strict_mode,
+            # disable_type_check=self.disable_type_check,
         )
 
         inner_types_list: typing.List[type] = []
@@ -594,8 +612,9 @@ class MiniField(_MiniFieldBase):
         try:
             self.inner_type = _ExpectedTypeResolver(
                 actual_types=tuple(inner_types_list),  # type: ignore
-                strict_model=model_config.get("strict_mode", False),
-                disable_type_check=self.disable_type_check,
+                model_config=self.model_config,
+                # strict_model=strict_mode,
+                # disable_type_check=self.disable_type_check,
             )
         except TypeError:
             self.inner_type = None
@@ -639,13 +658,13 @@ class MiniField(_MiniFieldBase):
     ) -> typing.Optional[typing.Dict[str, typing.Any]]:
         if instance is None:
             return None
-        context = instance.__dict__.get("__pydantic_mini_model_context__", None)
+        context = instance.__dict__.get(PYDANTIC_MINI_MODEL_CONTEXT, None)
         if context:
             return context
 
         context = getattr(inspect.getmodule(instance.__class__), "__dict__", None)
         if cache_context:
-            instance.__dict__["__pydantic_mini_model_context__"] = context
+            instance.__dict__[PYDANTIC_MINI_MODEL_CONTEXT] = context
 
         return context
 
@@ -665,8 +684,9 @@ class MiniField(_MiniFieldBase):
     def _field_type_validator(self, value: typing.Any) -> None:
         if self.is_collection:
             if self.inner_type:
-                old_strict_mode = self.inner_type._strict_model
-                self.inner_type._strict_model = False
+                old_config = self.inner_type.model_config
+                new_config = old_config.copy(validation=ValidationFlags.TYPECHECK)
+                self.inner_type.model_config = new_config
 
                 for val in value:
                     if not self.inner_type.validate(val):
@@ -674,7 +694,8 @@ class MiniField(_MiniFieldBase):
                             f"Expected a collection of values of type(s) '{self.inner_type.type_string()}'. Value: {val} "
                         )
 
-                self.inner_type._strict_model = old_strict_mode
+                self.inner_type.model_config = old_config
+                del new_config
         elif not self.expected_type.validate(value):
             raise TypeError(
                 f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "

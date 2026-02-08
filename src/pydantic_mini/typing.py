@@ -5,6 +5,7 @@ import sys
 import types
 import typing
 import inspect
+import warnings
 import collections
 from enum import IntFlag, Enum, auto
 from dataclasses import MISSING, InitVar
@@ -50,6 +51,8 @@ __all__ = (
     "dataclass_transform",
     "ValidatorType",
     "PreFormatType",
+    "ValidationFlags",
+    "InitStrategy",
 )
 
 logger = logging.getLogger(__name__)
@@ -109,80 +112,202 @@ class ValidationFlags(IntFlag):
     TYPECHECK = 1 << 0  # 0b001 = 1 - Type checking (isinstance)
     COERCE = 1 << 1  # 0b010 = 2  - Type coercion ("123" → 123)
 
-    # Note: PREFORMATTERS always run (not a flag - they're data normalization)
-
     # Convenience combinations
     NONE = 0  # No validation at all
-    ALL = TYPECHECK | COERCE  # Full validation
-
-    # Common presets
     STRICT = TYPECHECK  # No coercion, but validate
-    VALIDATED = ALL  # Full validation (default)
-    TYPECHECK_ONLY = TYPECHECK | COERCE  # Type safety only
+    VALIDATED = TYPECHECK | COERCE  # Full validation (default)
+
+    @staticmethod
+    def should_typecheck(flags: 'ValidationFlags') -> bool:
+        """Check if type checking is enabled."""
+        return (flags & ValidationFlags.TYPECHECK) != 0
+
+    @staticmethod
+    def should_coerce(flags: 'ValidationFlags') -> bool:
+        """Check if type coercion is enabled."""
+        return (flags & ValidationFlags.COERCE) != 0
+
+    @staticmethod
+    def is_validated(flags: 'ValidationFlags') -> bool:
+        """Check if full validation is enabled (typecheck + coerce)."""
+        required = ValidationFlags.TYPECHECK | ValidationFlags.COERCE
+        return (flags & required) == required
 
 
 class ModelConfigWrapper:
+    """
+    Wrapper for model configuration options.
+
+    Provides defaults and validation for both standard dataclass
+    config and pydantic-mini specific options.
+    """
     # Standard dataclass config
-    # init: bool = True
-    repr: bool = True
-    eq: bool = True
-    order: bool = False
-    unsafe_hash: bool = False
-    frozen: bool = False
+    DEFAULT_REPR = True
+    DEFAULT_EQ = True
+    DEFAULT_ORDER = False
+    DEFAULT_UNSAFE_HASH = False
+    DEFAULT_FROZEN = False
 
-    # pydantic-mini specific config
+    # Pydantic-mini specific
+    DEFAULT_INIT_STRATEGY = InitStrategy.DATACLASS
+    DEFAULT_VALIDATION = ValidationFlags.VALIDATED
+    DEFAULT_FORWARD_REFS_AS_ANY = False
 
-    strict_mode: bool = False  # if true, don't coerce values
+    def __init__(self, config: typing.Optional[typing.Type[typing.Any]] = None):
+        # Standard dataclass config
+        self.repr: bool = self.DEFAULT_REPR
+        self.eq: bool = self.DEFAULT_EQ
+        self.order: bool = self.DEFAULT_ORDER
+        self.unsafe_hash: bool = self.DEFAULT_UNSAFE_HASH
+        self.frozen: bool = self.DEFAULT_FROZEN
 
-    # If true, disable type check but apply all custom validators
-    disable_typecheck: bool = False
+        # Init strategy
+        self.init_strategy: InitStrategy = self.DEFAULT_INIT_STRATEGY
 
-    # If true, disable all validations
-    disable_all_validation: bool = False
+        # Validation control
+        self.validation: ValidationFlags = self.DEFAULT_VALIDATION
 
-    # Init strategy
-    init_strategy: InitStrategy = InitStrategy.FAST
+        # Other options
+        self.forward_refs_as_any: bool = self.DEFAULT_FORWARD_REFS_AS_ANY
 
-    # Validation control
-    validation: ValidationFlags = ValidationFlags.VALIDATED
+        self._config = config
 
-    # Other options
+        if config is not None:
+            self._apply_config(config)
+            self._validate_config()
 
-    # If true, all forward references are treated as typing.Any.
-    # This, therefore, disables all validations for the field
-    forward_refs_as_any: bool = False
+    def _apply_config(self, config: typing.Type[typing.Any]) -> None:
+        for key, value in config.__dict__.items():
+            if key.startswith('_') or callable(value):
+                continue
 
-    def __init__(self, config: typing.Type[typing.Any]):
-        self.config = config
+            if hasattr(self, key):
+                self.__dict__[key] = value
+            else:
+                # Warn about unknown config options
+                warnings.warn(
+                    f"Unknown configuration option: {key}",
+                    UserWarning,
+                    stacklevel=3
+                )
 
-    @staticmethod
-    def should_coerce(flags: ValidationFlags) -> bool:
-        return bool(flags & ValidationFlags.COERCE)
+    def _validate_config(self) -> None:
+        # Validate frozen + eq combination
+        if self.frozen and not self.eq:
+            warnings.warn(
+                "frozen=True with eq=False may cause issues with hashing",
+                UserWarning,
+                stacklevel=3
+            )
 
-    @staticmethod
-    def check_data_type(flags: ValidationFlags) -> bool:
-        return bool(flags & ValidationFlags.TYPECHECK)
+    def should_typecheck(self) -> bool:
+        """Check if type checking is enabled."""
+        return ValidationFlags.should_typecheck(self.validation)
 
-    @staticmethod
-    def check_all_validations(flags: ValidationFlags) -> bool:
-        return bool(flags & ValidationFlags.VALIDATED)
+    def should_coerce(self) -> bool:
+        """Check if type coercion is enabled."""
+        return ValidationFlags.should_coerce(self.validation)
 
-    def get_config(self, name: str) -> typing.Any:
-        if self.config and hasattr(self.config, name):
-            return getattr(self.config, name, None)
-        return getattr(self.__class__, name, None)
+    def is_validated(self) -> bool:
+        """Check if full validation is enabled."""
+        return ValidationFlags.is_validated(self.validation)
 
-    def get_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-        dt = collections.OrderedDict()
-        for config_field in _DATACLASS_CONFIG_FIELD:
-            dt[config_field] = self.get_config(config_field)
-        return dt
+    def as_dataclass_kwargs(self) -> dict:
+        return {
+            'init': True,
+            'repr': self.repr,
+            'eq': self.eq,
+            'order': self.order,
+            'unsafe_hash': self.unsafe_hash,
+            'frozen': self.frozen,
+        }
 
-    def get_non_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-        dt = collections.OrderedDict()
-        for config_field in _NON_DATACLASS_CONFIG_FIELD:
-            dt[config_field] = self.get_config(config_field)
-        return dt
+    def __repr__(self) -> str:
+        return (
+            f"ModelConfigWrapper("
+            f"init_strategy={self.init_strategy.value}, "
+            f"frozen={self.frozen})"
+        )
+
+    def copy(self, **overrides) -> 'ModelConfigWrapper':
+        """
+        Create a copy of config with optional overrides.
+
+        Args:
+            **overrides: Configuration values to override.
+
+        Returns:
+            New ModelConfigWrapper instance.
+
+        Example:
+            >>> config = ModelConfigWrapper()
+            >>> strict_config = config.copy(validation=ValidationFlags.STRICT)
+        """
+        new_config = ModelConfigWrapper(self._config)
+
+        for key, value in overrides.items():
+            if hasattr(new_config, key):
+                setattr(new_config, key, value)
+            else:
+                raise ValueError(f"Unknown config option: {key}")
+
+        new_config._validate_config()
+
+        return new_config
+
+
+# class ModelConfigWrapper:
+#
+#     def __init__(self, config: typing.Type[typing.Any]):
+#         # Standard dataclass config
+#         # init: bool = True
+#         self.repr: bool = True
+#         self.eq: bool = True
+#         self.order: bool = False
+#         self.unsafe_hash: bool = False
+#         self.frozen: bool = False
+#
+#         # pydantic-mini specific config
+#
+#         # strict_mode: bool = False  # if true, don't coerce values
+#
+#         # If true, disable type check but apply all custom validators
+#         # disable_typecheck: bool = False
+#
+#         # If true, disable all validations
+#         # disable_all_validation: bool = False
+#
+#         # Init strategy
+#         self.init_strategy: InitStrategy = InitStrategy.DATACLASS
+#
+#         # Validation control
+#         self.validation: ValidationFlags = ValidationFlags.VALIDATED
+#
+#         # Other options,
+#         # If true, all forward references are treated as typing.Any.
+#         # This, therefore, disables all validations for the field
+#         self.forward_refs_as_any: bool = False
+#
+#         self.config: typing.Type[typing.Any] = config
+#         if config:
+#             self.__dict__.update(config.__dict__)
+#
+#     def get_config(self, name: str) -> typing.Any:
+#         if self.config and hasattr(self.config, name):
+#             return getattr(self.config, name, None)
+#         return getattr(self.__class__, name, None)
+#
+#     def get_dataclass_config(self) -> typing.Dict[str, typing.Any]:
+#         dt = collections.OrderedDict()
+#         for config_field in _DATACLASS_CONFIG_FIELD:
+#             dt[config_field] = self.get_config(config_field)
+#         return dt
+#
+#     def get_non_dataclass_config(self) -> typing.Dict[str, typing.Any]:
+#         dt = collections.OrderedDict()
+#         for config_field in _NON_DATACLASS_CONFIG_FIELD:
+#             dt[config_field] = self.get_config(config_field)
+#         return dt
 
 
 class Attrib:
