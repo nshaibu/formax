@@ -22,7 +22,11 @@ from .typing import (
     ValidationFlags,
     InitStrategy,
 )
-from .utils import make_private_field, PYDANTIC_MINI_MODEL_CONFIG, PYDANTIC_MINI_SIGNATURE_MATCHER
+from .utils import (
+    make_private_field,
+    PYDANTIC_MINI_MODEL_CONFIG,
+    PYDANTIC_MINI_SIGNATURE_MATCHER,
+)
 from .make_init import (
     make_disable_all_validation_init,
     make_disable_type_check_init,
@@ -33,7 +37,6 @@ from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniF
 
 
 __all__ = ("BaseModel",)
-
 
 
 def _generate_fast_init(
@@ -125,7 +128,7 @@ class SchemaMeta(type):
             new_attrs["__init__"] = fast_init
         elif config.init_strategy == InitStrategy.CUSTOM:
             dataclass_config["init"] = False
-            if '__init__' not in new_attrs:
+            if "__init__" not in new_attrs:
                 raise KeyError("'__init__' is not defined for class '{}'".format(name))
         else:
             dataclass_config["init"] = True
@@ -329,11 +332,6 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        # config_dict = config.get_non_dataclass_config()
-
-        # disable_all_validation = config_dict.get("disable_all_validation", False)
-        # disable_type_check = config_dict.get("disable_type_check", False)
-
         disable_all_validation = config.validation == ValidationFlags.NONE
 
         for field_name, annotation, value in cls.get_fields(attrs):
@@ -449,12 +447,7 @@ class SchemaMeta(type):
                     field_name, annotation, config, value_field
                 )
             else:
-                mini_field = MiniField(
-                    field_name,
-                    annotation,
-                    config,
-                    value_field
-                )
+                mini_field = MiniField(field_name, annotation, config, value_field)
 
                 if field_name in validators:
                     compiled_validator: ValidatorType = compile_callbacks(
@@ -509,10 +502,6 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
     # These are populated by the metaclass
     __validators__: typing.Dict[str, typing.List[ValidatorType]]
     __preformatters__: typing.Dict[str, typing.List[PreFormatType]]
-
-    class Config:
-        validation = ValidationFlags.VALIDATED
-        init_strategy = InitStrategy.FAST
 
     @staticmethod
     def get_formatter_by_name(name: str) -> BaseModelFormatter:

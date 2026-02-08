@@ -64,7 +64,9 @@ class DictModelFormatter(BaseModelFormatter):
         self, _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
     ) -> "BaseModel":
         model_config = _type.get_pydantic_mini_config()
-        resolver = _ExpectedTypeResolver(actual_types=(_type,), model_config=model_config)
+        resolver = _ExpectedTypeResolver(
+            actual_types=(_type,), model_config=model_config
+        )
         instance = resolver.coerce(obj)
         return instance
 

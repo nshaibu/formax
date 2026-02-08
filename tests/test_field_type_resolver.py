@@ -9,8 +9,10 @@ from pydantic_mini.fields import _ExpectedType, _ExpectedTypeResolver
 MISSING = dataclasses.MISSING
 dc_fields = dataclasses.fields
 
+
 class Config:
     validation = ValidationFlags.COERCE
+
 
 model_config = ModelConfigWrapper(Config)
 

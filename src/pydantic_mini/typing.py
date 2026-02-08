@@ -118,17 +118,17 @@ class ValidationFlags(IntFlag):
     VALIDATED = TYPECHECK | COERCE  # Full validation (default)
 
     @staticmethod
-    def should_typecheck(flags: 'ValidationFlags') -> bool:
+    def should_typecheck(flags: "ValidationFlags") -> bool:
         """Check if type checking is enabled."""
         return (flags & ValidationFlags.TYPECHECK) != 0
 
     @staticmethod
-    def should_coerce(flags: 'ValidationFlags') -> bool:
+    def should_coerce(flags: "ValidationFlags") -> bool:
         """Check if type coercion is enabled."""
         return (flags & ValidationFlags.COERCE) != 0
 
     @staticmethod
-    def is_validated(flags: 'ValidationFlags') -> bool:
+    def is_validated(flags: "ValidationFlags") -> bool:
         """Check if full validation is enabled (typecheck + coerce)."""
         required = ValidationFlags.TYPECHECK | ValidationFlags.COERCE
         return (flags & required) == required
@@ -141,6 +141,7 @@ class ModelConfigWrapper:
     Provides defaults and validation for both standard dataclass
     config and pydantic-mini specific options.
     """
+
     # Standard dataclass config
     DEFAULT_REPR = True
     DEFAULT_EQ = True
@@ -149,9 +150,15 @@ class ModelConfigWrapper:
     DEFAULT_FROZEN = False
 
     # Pydantic-mini specific
-    DEFAULT_INIT_STRATEGY = InitStrategy.FAST
+    DEFAULT_INIT_STRATEGY = InitStrategy.DATACLASS
     DEFAULT_VALIDATION = ValidationFlags.VALIDATED
-    DEFAULT_FORWARD_REFS_AS_ANY = False
+    DEFAULT_FORWARD_REFS_AS_ANY = True
+
+    DEFAULT_DROP_INHERITED_VALIDATORS = False
+    DEFAULT_DROP_INHERITED_PREFORMATTERS = False
+
+    DEFAULT_UNSAFE_DISABLE_VALIDATORS = False
+    DEFAULT_UNSAFE_DISABLE_PREFORMATTERS = False
 
     def __init__(self, config: typing.Optional[typing.Type[typing.Any]] = None):
         # Standard dataclass config
@@ -167,8 +174,16 @@ class ModelConfigWrapper:
         # Validation control
         self.validation: ValidationFlags = self.DEFAULT_VALIDATION
 
-        # Other options
+        # Other options,
+        # If true, all forward references are treated as typing.Any.
+        # This, therefore, disables all validations for the field
         self.forward_refs_as_any: bool = self.DEFAULT_FORWARD_REFS_AS_ANY
+
+        self.drop_inherited_validators = self.DEFAULT_DROP_INHERITED_VALIDATORS
+        self.drop_inherited_preformatters = self.DEFAULT_DROP_INHERITED_PREFORMATTERS
+
+        self.unsafe_disable_validators = self.DEFAULT_UNSAFE_DISABLE_VALIDATORS
+        self.unsafe_disable_preformatters = self.DEFAULT_UNSAFE_DISABLE_PREFORMATTERS
 
         self._config = config
 
@@ -178,17 +193,14 @@ class ModelConfigWrapper:
 
     def _apply_config(self, config: typing.Type[typing.Any]) -> None:
         for key, value in config.__dict__.items():
-            if key.startswith('_') or callable(value):
+            if key.startswith("_") or callable(value):
                 continue
 
             if hasattr(self, key):
                 self.__dict__[key] = value
             else:
-                # Warn about unknown config options
                 warnings.warn(
-                    f"Unknown configuration option: {key}",
-                    UserWarning,
-                    stacklevel=3
+                    f"Unknown configuration option: {key}", UserWarning, stacklevel=3
                 )
 
     def _validate_config(self) -> None:
@@ -197,7 +209,7 @@ class ModelConfigWrapper:
             warnings.warn(
                 "frozen=True with eq=False may cause issues with hashing",
                 UserWarning,
-                stacklevel=3
+                stacklevel=3,
             )
 
     def should_typecheck(self) -> bool:
@@ -214,12 +226,12 @@ class ModelConfigWrapper:
 
     def as_dataclass_kwargs(self) -> dict:
         return {
-            'init': True,
-            'repr': self.repr,
-            'eq': self.eq,
-            'order': self.order,
-            'unsafe_hash': self.unsafe_hash,
-            'frozen': self.frozen,
+            "init": True,
+            "repr": self.repr,
+            "eq": self.eq,
+            "order": self.order,
+            "unsafe_hash": self.unsafe_hash,
+            "frozen": self.frozen,
         }
 
     def __repr__(self) -> str:
@@ -229,7 +241,7 @@ class ModelConfigWrapper:
             f"frozen={self.frozen})"
         )
 
-    def copy(self, **overrides) -> 'ModelConfigWrapper':
+    def copy(self, **overrides) -> "ModelConfigWrapper":
         """
         Create a copy of config with optional overrides.
 
@@ -254,60 +266,6 @@ class ModelConfigWrapper:
         new_config._validate_config()
 
         return new_config
-
-
-# class ModelConfigWrapper:
-#
-#     def __init__(self, config: typing.Type[typing.Any]):
-#         # Standard dataclass config
-#         # init: bool = True
-#         self.repr: bool = True
-#         self.eq: bool = True
-#         self.order: bool = False
-#         self.unsafe_hash: bool = False
-#         self.frozen: bool = False
-#
-#         # pydantic-mini specific config
-#
-#         # strict_mode: bool = False  # if true, don't coerce values
-#
-#         # If true, disable type check but apply all custom validators
-#         # disable_typecheck: bool = False
-#
-#         # If true, disable all validations
-#         # disable_all_validation: bool = False
-#
-#         # Init strategy
-#         self.init_strategy: InitStrategy = InitStrategy.DATACLASS
-#
-#         # Validation control
-#         self.validation: ValidationFlags = ValidationFlags.VALIDATED
-#
-#         # Other options,
-#         # If true, all forward references are treated as typing.Any.
-#         # This, therefore, disables all validations for the field
-#         self.forward_refs_as_any: bool = False
-#
-#         self.config: typing.Type[typing.Any] = config
-#         if config:
-#             self.__dict__.update(config.__dict__)
-#
-#     def get_config(self, name: str) -> typing.Any:
-#         if self.config and hasattr(self.config, name):
-#             return getattr(self.config, name, None)
-#         return getattr(self.__class__, name, None)
-#
-#     def get_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-#         dt = collections.OrderedDict()
-#         for config_field in _DATACLASS_CONFIG_FIELD:
-#             dt[config_field] = self.get_config(config_field)
-#         return dt
-#
-#     def get_non_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-#         dt = collections.OrderedDict()
-#         for config_field in _NON_DATACLASS_CONFIG_FIELD:
-#             dt[config_field] = self.get_config(config_field)
-#         return dt
 
 
 class Attrib:

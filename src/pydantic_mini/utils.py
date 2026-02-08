@@ -9,6 +9,5 @@ PYDANTIC_MINI_MODEL_CONTEXT = "__pydantic_mini_model_context__"
 _DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
 
-
 def make_private_field(field_name):
     return f"{PRIVATE_FIELD_PREFIX}{field_name}"
