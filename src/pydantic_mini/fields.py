@@ -85,6 +85,7 @@ class _ExpectedType:
         "is_model",
         "is_class",
         "is_forward_ref",
+        "is_any",
         "signature_matcher",
         "_resolved",
     )
@@ -103,12 +104,28 @@ class _ExpectedType:
 
         self._resolved = not self.is_forward_ref
 
-        self.is_builtin: bool = is_builtin_type(self.type)
-        self.is_enum: bool = isinstance(self.type, type) and issubclass(self.type, Enum)
-        self.is_model: bool = hasattr(
-            self.type, PYDANTIC_MINI_MODEL_CONFIG
-        ) or is_dataclass(self.type)
-        self.is_class: bool = inspect.isclass(self.type)
+        self.is_any = is_any_type(typ_)
+        if not self.is_any:
+            self.is_builtin: bool = is_builtin_type(self.type)
+            self.is_enum: bool = isinstance(self.type, type) and issubclass(
+                self.type, Enum
+            )
+            self.is_model: bool = hasattr(
+                self.type, PYDANTIC_MINI_MODEL_CONFIG
+            ) or is_dataclass(self.type)
+            self.is_class: bool = inspect.isclass(self.type)
+        else:
+            # if type is any, there is no reason to introspect it
+            # since that can take a lot of cpu cycles
+            self.__dict__.update(
+                {
+                    "_resolved": True,
+                    "is_builtin": False,
+                    "is_enum": False,
+                    "is_model": False,
+                    "is_class": False,
+                }
+            )
 
         if self.is_null_type():
             self.is_builtin = True
@@ -127,7 +144,7 @@ class _ExpectedType:
         return False
 
     def isinstance_of(self, value: typing.Any) -> bool:
-        if self.is_any_type():
+        if self.is_any:
             return True
         return isinstance(value, self.type)
 
@@ -265,7 +282,7 @@ class _ExpectedTypeResolver:
                     expected_type._resolved = True
 
                 if not self.has_any:
-                    self.has_any = expected_type.is_any_type()
+                    self.has_any = expected_type.is_any
                 self._actual_types.append(expected_type)
 
         self._actual_types = sorted(self._actual_types, key=lambda t: t.order)
@@ -311,7 +328,7 @@ class _ExpectedTypeResolver:
                 f"Cannot coerce {type(value).__name__} to any of the type(s) {self.type_string()}"
             )
 
-        if matching_type.is_any_type():
+        if matching_type.is_any:
             return value
 
         if matching_type.isinstance_of(value):
@@ -701,7 +718,7 @@ class MiniField(_MiniFieldBase):
                         )
 
                 # self.inner_type.model_config = old_config
-               #  del new_config
+            #  del new_config
         elif not self.expected_type.validate(value):
             raise TypeError(
                 f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
