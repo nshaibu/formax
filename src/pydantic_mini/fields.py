@@ -661,13 +661,14 @@ class MiniField(_MiniFieldBase):
     ) -> typing.Optional[typing.Dict[str, typing.Any]]:
         if instance is None:
             return None
-        context = instance.__dict__.get(PYDANTIC_MINI_MODEL_CONTEXT, None)
+        cls = instance.__class__
+        context = getattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, None)
         if context:
             return context
 
-        context = getattr(inspect.getmodule(instance.__class__), "__dict__", None)
+        context = getattr(inspect.getmodule(cls), "__dict__", None)
         if cache_context:
-            instance.__dict__[PYDANTIC_MINI_MODEL_CONTEXT] = context
+            setattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, context)
 
         return context
 

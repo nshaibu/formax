@@ -25,6 +25,7 @@ from .typing import (
 from .utils import (
     make_private_field,
     PYDANTIC_MINI_MODEL_CONFIG,
+    PYDANTIC_MINI_MODEL_CONTEXT,
     PYDANTIC_MINI_SIGNATURE_MATCHER,
 )
 from .make_init import (
@@ -118,6 +119,7 @@ class SchemaMeta(type):
         # Store them in the namespace for later access
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
+        new_attrs[PYDANTIC_MINI_MODEL_CONTEXT] = None
 
         config = cls._prepare_model_fields(new_attrs, validators, preformatters)
         dataclass_config: typing.Dict[str, typing.Any] = config.as_dataclass_kwargs()
@@ -502,6 +504,8 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
     # These are populated by the metaclass
     __validators__: typing.Dict[str, typing.List[ValidatorType]]
     __preformatters__: typing.Dict[str, typing.List[PreFormatType]]
+
+    __pydantic_mini_model_context__ = None
 
     @staticmethod
     def get_formatter_by_name(name: str) -> BaseModelFormatter:
