@@ -699,7 +699,7 @@ class MiniField(_MiniFieldBase):
                         )
 
                 self.inner_type.model_config = old_config
-                del new_config
+               #  del new_config
         elif not self.expected_type.validate(value):
             raise TypeError(
                 f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
