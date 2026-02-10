@@ -44,12 +44,13 @@ def _generate_fast_init(
     attrs: typing.Dict[str, typing.Any],
     config: ModelConfigWrapper,
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    # if config.validation == ValidationFlags.TYPECHECK:
-    #     return make_disable_type_check_init(attrs)
-    # elif not config.validation == ValidationFlags.NONE:
-    #     return make_disable_all_validation_init(attrs)
+    if config.validation & ValidationFlags.VALIDATED:
+        if config.validation & ValidationFlags.TYPECHECK:
+            return make_fast_init(attrs)
+        else:
+            return make_disable_type_check_init(attrs)
 
-    return make_fast_init(attrs)
+    return make_disable_all_validation_init(attrs)
 
 
 def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
