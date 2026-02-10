@@ -2,7 +2,7 @@ import typing
 from dataclasses import MISSING
 
 from .fields import MiniField
-from .utils import make_private_field
+from .utils import make_private_field, PYDANTIC_MINI_MODEL_CONTEXT
 
 
 def join_string(str_list: typing.List[str], sep: str = ",") -> str:
@@ -44,7 +44,7 @@ def _post_init_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
 
 
 def _disable_all_validation_init_body(
-    attrs: typing.Dict[str, typing.Any],
+    attrs: typing.Dict[str, typing.Any], frozen: bool = False
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
     cbs = {}
@@ -84,7 +84,7 @@ def make_disable_all_validation_init(
 
 
 def _disable_type_check_init_body(
-    attrs: typing.Dict[str, typing.Any],
+    attrs: typing.Dict[str, typing.Any], frozen: bool = False
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
     preformat_cbs = {}
@@ -149,12 +149,15 @@ def make_disable_type_check_init(
 
 
 def _fast_init_body(
-    attrs: typing.Dict[str, typing.Any],
+    attrs: typing.Dict[str, typing.Any], frozen: bool = False
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
     mini_fields_dict = {}
 
     field_names = list(attrs.get("__annotations__", []))
+
+    model_context_statement = f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
+    body.append(model_context_statement)
 
     for field_name in field_names:
         mini_statement = ""
@@ -167,12 +170,12 @@ def _fast_init_body(
 
             mini_statement = f"\tcoerced_{field_name}_value = {mini_field_name}.run_preformatters(self, {field_name})\n"
 
-            if mini_field.__class__ == MiniField:
+            if mini_field.__class__.__name__ == "MiniField":
                 # Resolve and set model context
-                mini_statement += f"\tmodel_context_{field_name} = {mini_field_name}.get_model_context(self)\n"
-                mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context_{field_name}\n"
+                # mini_statement += f"\tmodel_context_{field_name} = {mini_field_name}.get_model_context(self)\n"
+                mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
                 mini_statement += f"\tif {mini_field_name}.inner_type:\n"
-                mini_statement += f"\t\t{mini_field_name}.inner_type.module_context = model_context_{field_name}\n\n"
+                mini_statement += f"\t\t{mini_field_name}.inner_type.module_context = model_context\n\n"
 
                 # Initialised type resolver
                 mini_statement += f"\t{mini_field_name}._finalise_type_resolver()\n\n"
@@ -188,14 +191,18 @@ def _fast_init_body(
                 mini_statement += f"\t{mini_field_name}._field_type_validator(coerced_{field_name}_value)\n"
             else:
                 # for when a field is annotated with typing.Any
-                mini_statement += f"\t{mini_field_name}._query.validate(coerced_{field_name}_value, {field_name!r})\n"
+                # mini_statement += f"\t{mini_field_name}._query.validate(coerced_{field_name}_value, {field_name!r})\n"
+                pass
 
             mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
 
         private_name = make_private_field(field_name)
-        mini_statement += (
-            f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
-        )
+        if frozen:
+            mini_statement += f"\tobject.__setattr__(self, {private_name!r}, coerced_{field_name}_value)"
+        else:
+            mini_statement += (
+                f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
+            )
         body.append(mini_statement)
 
     code = "\n".join(body)
@@ -212,6 +219,7 @@ def make_fast_init(
     code = "\n".join(statements)
 
     local_ns = {}
+    # import pdb; pdb.set_trace()
 
     exec(code, cbs, local_ns)
 

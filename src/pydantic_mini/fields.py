@@ -122,56 +122,6 @@ class _ExpectedType:
             # Full introspection
             self._introspect_type()
 
-    # def __init__(self, typ_: typing.Type[typing.Any], order: int) -> None:
-    #     if typ_ is None:
-    #         typ_ = NoneType
-    #
-    #     self.type: type = typ_
-    #
-    #     # will be saved in non-ordered datastructures so we keep the order
-    #     self.order: int = order
-    #     self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
-    #
-    #     self.is_null = False
-    #
-    #     self.is_forward_ref = isinstance(typ_, (ForwardRef, str))
-    #
-    #     self._resolved = not self.is_forward_ref
-    #
-    #     self.is_any = is_any_type(typ_)
-    #     if not self.is_any:
-    #         self.is_builtin: bool = is_builtin_type(self.type)
-    #         self.is_enum: bool = isinstance(self.type, type) and issubclass(
-    #             self.type, Enum
-    #         )
-    #         self.is_model: bool = hasattr(
-    #             self.type, PYDANTIC_MINI_MODEL_CONFIG
-    #         ) or is_dataclass(self.type)
-    #         self.is_class: bool = inspect.isclass(self.type)
-    #     else:
-    #         # if type is any, there is no reason to introspect it
-    #         # since that can take a lot of cpu cycles
-    #         self.is_builtin: bool = True
-    #         self.is_enum: bool = False
-    #         self.is_model: bool = False
-    #         self.is_class: bool = False
-    #         self._resolved: bool = True
-    #
-    #     if self.is_null_type():
-    #         self.is_builtin = True
-
-    # @staticmethod
-    # def _check_is_any(typ_: typing.Any) -> bool:
-    #     """Check if type is typing.Any (inlined, no cache)."""
-    #     if typ_ is typing.Any:
-    #         return True
-    #
-    #     origin = get_origin(typ_)
-    #     if origin is typing.Any:
-    #         return True
-    #
-    #     return False
-
     def is_null_type(self) -> bool:
         if self.is_class:
             name = getattr(self.type, "__name__", None)

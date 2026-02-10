@@ -44,10 +44,10 @@ def _generate_fast_init(
     attrs: typing.Dict[str, typing.Any],
     config: ModelConfigWrapper,
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    if not config.validation == ValidationFlags.TYPECHECK:
-        return make_disable_type_check_init(attrs)
-    elif not config.validation == ValidationFlags.NONE:
-        return make_disable_all_validation_init(attrs)
+    # if config.validation == ValidationFlags.TYPECHECK:
+    #     return make_disable_type_check_init(attrs)
+    # elif not config.validation == ValidationFlags.NONE:
+    #     return make_disable_all_validation_init(attrs)
 
     return make_fast_init(attrs)
 
@@ -114,14 +114,17 @@ class SchemaMeta(type):
 
         new_attrs = cls.build_class_namespace(name, attrs)
 
-        validators, preformatters = cls._collect_field_callbacks(new_attrs, bases)
+        model_config_class: typing.Optional[typing.Type] = new_attrs.get("Config", None)
+        config = ModelConfigWrapper(model_config_class)
+
+        validators, preformatters = cls._collect_field_callbacks(new_attrs, bases, config)
 
         # Store them in the namespace for later access
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
         new_attrs[PYDANTIC_MINI_MODEL_CONTEXT] = None
 
-        config = cls._prepare_model_fields(new_attrs, validators, preformatters)
+        cls._prepare_model_fields(new_attrs, validators, preformatters, config)
         dataclass_config: typing.Dict[str, typing.Any] = config.as_dataclass_kwargs()
 
         if config.init_strategy == InitStrategy.FAST:
@@ -184,6 +187,7 @@ class SchemaMeta(type):
         cls,
         attrs: typing.Dict[str, typing.Any],
         bases: typing.Tuple[type, ...],
+        config: ModelConfigWrapper,
     ) -> typing.Tuple[
         typing.Dict[str, typing.List[ValidatorType]],
         typing.Dict[str, typing.List[PreFormatType]],
@@ -327,12 +331,13 @@ class SchemaMeta(type):
         attrs: typing.Dict[str, typing.Any],
         validators: typing.Dict[str, typing.List[ValidatorType]],
         preformatters: typing.Dict[str, typing.List[PreFormatType]],
-    ) -> ModelConfigWrapper:
+        config: ModelConfigWrapper,
+    ) -> None:
         ann_with_defaults = OrderedDict()
         ann_without_defaults = OrderedDict()
 
-        model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
-        config = ModelConfigWrapper(model_config_class)
+        # model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
+        # config = ModelConfigWrapper(model_config_class)
 
         disable_all_validation = config.validation == ValidationFlags.NONE
 
@@ -470,7 +475,7 @@ class SchemaMeta(type):
         if ann_without_defaults:
             attrs["__annotations__"] = ann_without_defaults
 
-        return config
+        return None
 
 
 class PreventOverridingMixin:
