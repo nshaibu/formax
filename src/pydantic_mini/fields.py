@@ -39,9 +39,7 @@ class _ClassSignatureMatcher:
     def __init__(self, cls):
         try:
             if is_builtin_type(cls) or issubclass(cls, Enum) or cls is typing.Any:
-                self.required = frozenset()
-                self.allowed = frozenset()
-                self.has_kwargs = False
+                self._no_sig()
             elif is_dataclass(cls):
                 fields = dc_fields(cls)
                 self.allowed = frozenset([f.name for f in fields])
@@ -68,9 +66,12 @@ class _ClassSignatureMatcher:
                 )
                 self.has_kwargs = any(p.kind == p.VAR_KEYWORD for p in params.values())
         except (TypeError, ValueError):
-            self.required = frozenset()
-            self.allowed = frozenset()
-            self.has_kwargs = False
+            self._no_sig()
+
+    def _no_sig(self):
+        self.required = frozenset()
+        self.allowed = frozenset()
+        self.has_kwargs = False
 
     def __bool__(self) -> bool:
         return bool(self.required) or bool(self.allowed)
@@ -108,18 +109,14 @@ class _ExpectedType:
         self.order: int = order
         self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
 
-        # Fast path: Check for forward references first
         self.is_forward_ref = isinstance(typ_, (ForwardRef, str))
         self._resolved = not self.is_forward_ref
 
-        # Fast path: Check for Any type
-        self.is_any = self._check_is_any(typ_)
+        self.is_any = is_any_type(typ_)
 
         if self.is_any:
-            # Short-circuit: Any type needs no introspection
             self._set_any_defaults()
         elif self.is_forward_ref:
-            # Short-circuit: Forward refs can't be introspected yet
             self._set_forward_ref_defaults()
         else:
             # Full introspection
@@ -163,17 +160,17 @@ class _ExpectedType:
     #     if self.is_null_type():
     #         self.is_builtin = True
 
-    @staticmethod
-    def _check_is_any(typ_: typing.Any) -> bool:
-        """Check if type is typing.Any (inlined, no cache)."""
-        if typ_ is typing.Any:
-            return True
-
-        origin = get_origin(typ_)
-        if origin is typing.Any:
-            return True
-
-        return False
+    # @staticmethod
+    # def _check_is_any(typ_: typing.Any) -> bool:
+    #     """Check if type is typing.Any (inlined, no cache)."""
+    #     if typ_ is typing.Any:
+    #         return True
+    #
+    #     origin = get_origin(typ_)
+    #     if origin is typing.Any:
+    #         return True
+    #
+    #     return False
 
     def is_null_type(self) -> bool:
         if self.is_class:
@@ -182,11 +179,6 @@ class _ExpectedType:
                     return False
             return name == "NoneType"
         return self.type is NoneType
-
-    def is_any_type(self) -> bool:
-        if self._resolved:
-            return is_any_type(self.type)
-        return False
 
     def isinstance_of(self, value: typing.Any) -> bool:
         if self.is_any:
@@ -224,15 +216,13 @@ class _ExpectedType:
             self.is_class = False
             return
 
-        # Check if it's a class
         is_type_class = isinstance(typ_, type)
         self.is_class = is_type_class
 
-        # Builtin check (inlined for speed)
+        # Fast builtin check
         if typ_ in _BUILTIN_TYPES:
             self.is_builtin = True
         else:
-            # Check origin for generics (list[int] → list)
             origin = get_origin(typ_)
             self.is_builtin = origin in _BUILTIN_TYPES if origin else False
 
@@ -245,7 +235,6 @@ class _ExpectedType:
         else:
             self.is_enum = False
 
-        # Model check - check __dict__ directly (faster than hasattr)
         self.is_model = (
                 PYDANTIC_MINI_MODEL_CONFIG in getattr(typ_, '__dict__', {}) or
                 is_dataclass(typ_)
