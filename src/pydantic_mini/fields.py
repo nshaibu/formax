@@ -76,10 +76,19 @@ class _ClassSignatureMatcher:
         return bool(self.required) or bool(self.allowed)
 
 
+_BUILTIN_TYPES = frozenset({
+    int, float, str, bool, bytes, bytearray,
+    list, dict, set, tuple, frozenset,
+    complex, range, memoryview, NoneType
+})
+
+
+
 class _ExpectedType:
     __slots__ = (
         "type",
         "order",
+        "is_null",
         "is_builtin",
         "is_enum",
         "is_model",
@@ -91,50 +100,86 @@ class _ExpectedType:
     )
 
     def __init__(self, typ_: typing.Type[typing.Any], order: int) -> None:
+        # Early normalization
         if typ_ is None:
             typ_ = NoneType
 
         self.type: type = typ_
-
-        # will be saved in non-ordered datastructures so we keep the order
         self.order: int = order
         self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
 
+        # Fast path: Check for forward references first
         self.is_forward_ref = isinstance(typ_, (ForwardRef, str))
-
         self._resolved = not self.is_forward_ref
 
-        self.is_any = is_any_type(typ_)
-        if not self.is_any:
-            self.is_builtin: bool = is_builtin_type(self.type)
-            self.is_enum: bool = isinstance(self.type, type) and issubclass(
-                self.type, Enum
-            )
-            self.is_model: bool = hasattr(
-                self.type, PYDANTIC_MINI_MODEL_CONFIG
-            ) or is_dataclass(self.type)
-            self.is_class: bool = inspect.isclass(self.type)
-        else:
-            # if type is any, there is no reason to introspect it
-            # since that can take a lot of cpu cycles
-            self.__dict__.update(
-                {
-                    "_resolved": True,
-                    "is_builtin": False,
-                    "is_enum": False,
-                    "is_model": False,
-                    "is_class": False,
-                }
-            )
+        # Fast path: Check for Any type
+        self.is_any = self._check_is_any(typ_)
 
-        if self.is_null_type():
-            self.is_builtin = True
+        if self.is_any:
+            # Short-circuit: Any type needs no introspection
+            self._set_any_defaults()
+        elif self.is_forward_ref:
+            # Short-circuit: Forward refs can't be introspected yet
+            self._set_forward_ref_defaults()
+        else:
+            # Full introspection
+            self._introspect_type()
+
+    # def __init__(self, typ_: typing.Type[typing.Any], order: int) -> None:
+    #     if typ_ is None:
+    #         typ_ = NoneType
+    #
+    #     self.type: type = typ_
+    #
+    #     # will be saved in non-ordered datastructures so we keep the order
+    #     self.order: int = order
+    #     self.signature_matcher: typing.Optional[_ClassSignatureMatcher] = None
+    #
+    #     self.is_null = False
+    #
+    #     self.is_forward_ref = isinstance(typ_, (ForwardRef, str))
+    #
+    #     self._resolved = not self.is_forward_ref
+    #
+    #     self.is_any = is_any_type(typ_)
+    #     if not self.is_any:
+    #         self.is_builtin: bool = is_builtin_type(self.type)
+    #         self.is_enum: bool = isinstance(self.type, type) and issubclass(
+    #             self.type, Enum
+    #         )
+    #         self.is_model: bool = hasattr(
+    #             self.type, PYDANTIC_MINI_MODEL_CONFIG
+    #         ) or is_dataclass(self.type)
+    #         self.is_class: bool = inspect.isclass(self.type)
+    #     else:
+    #         # if type is any, there is no reason to introspect it
+    #         # since that can take a lot of cpu cycles
+    #         self.is_builtin: bool = True
+    #         self.is_enum: bool = False
+    #         self.is_model: bool = False
+    #         self.is_class: bool = False
+    #         self._resolved: bool = True
+    #
+    #     if self.is_null_type():
+    #         self.is_builtin = True
+
+    @staticmethod
+    def _check_is_any(typ_: typing.Any) -> bool:
+        """Check if type is typing.Any (inlined, no cache)."""
+        if typ_ is typing.Any:
+            return True
+
+        origin = get_origin(typ_)
+        if origin is typing.Any:
+            return True
+
+        return False
 
     def is_null_type(self) -> bool:
         if self.is_class:
             name = getattr(self.type, "__name__", None)
             if name is None:
-                return False
+                    return False
             return name == "NoneType"
         return self.type is NoneType
 
@@ -147,6 +192,64 @@ class _ExpectedType:
         if self.is_any:
             return True
         return isinstance(value, self.type)
+
+    def _set_any_defaults(self) -> None:
+        """Set defaults for Any type (fast path)."""
+        self.is_null = False
+        self.is_builtin = True
+        self.is_enum = False
+        self.is_model = False
+        self.is_class = False
+        self._resolved = True
+
+    def _set_forward_ref_defaults(self) -> None:
+        """Set defaults for forward references (fast path)."""
+        self.is_null = False
+        self.is_builtin = False
+        self.is_enum = False
+        self.is_model = False
+        self.is_class = False
+
+    def _introspect_type(self) -> None:
+        """Perform full type introspection."""
+        typ_ = self.type
+
+        # Check for None type first
+        self.is_null = typ_ is NoneType
+
+        if self.is_null:
+            self.is_builtin = True
+            self.is_enum = False
+            self.is_model = False
+            self.is_class = False
+            return
+
+        # Check if it's a class
+        is_type_class = isinstance(typ_, type)
+        self.is_class = is_type_class
+
+        # Builtin check (inlined for speed)
+        if typ_ in _BUILTIN_TYPES:
+            self.is_builtin = True
+        else:
+            # Check origin for generics (list[int] → list)
+            origin = get_origin(typ_)
+            self.is_builtin = origin in _BUILTIN_TYPES if origin else False
+
+        # Enum check
+        if is_type_class:
+            try:
+                self.is_enum = issubclass(typ_, Enum)
+            except TypeError:
+                self.is_enum = False
+        else:
+            self.is_enum = False
+
+        # Model check - check __dict__ directly (faster than hasattr)
+        self.is_model = (
+                PYDANTIC_MINI_MODEL_CONFIG in getattr(typ_, '__dict__', {}) or
+                is_dataclass(typ_)
+        )
 
     def resolve_type(
         self,
@@ -352,7 +455,7 @@ class _ExpectedTypeResolver:
         any_expected_type = None
 
         for expected_type in self._actual_types:
-            if expected_type.is_any_type():
+            if expected_type.is_any:
                 any_expected_type = expected_type
 
             if expected_type.isinstance_of(value):
