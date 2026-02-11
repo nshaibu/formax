@@ -84,14 +84,22 @@ def compile_callbacks(
     lines = [f"def {name}_{callback_type}(instance, value):"]
 
     if callback_type == "validate":
-        for i, cb in enumerate(callbacks):
+        _callbacks = sorted(
+            callbacks, key=lambda func: getattr(func, "_validator_order", 0)
+        )
+
+        for i, cb in enumerate(_callbacks):
             lines.append(f"    if _cb{i}(instance, value) is False:")
             lines.append(
                 f"        raise ValidationError('Validation of field {field_name} failed.')"
             )
         lines.append("    return None")
     else:
-        for i, cb in enumerate(callbacks):
+        _callbacks = sorted(
+            callbacks, key=lambda func: getattr(func, "_preformat_order", 0)
+        )
+
+        for i, cb in enumerate(_callbacks):
             lines.append(f"    value = _cb{i}(instance, value)")
         lines.append("    return value")
 
@@ -118,7 +126,9 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = new_attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        validators, preformatters = cls._collect_field_callbacks(new_attrs, bases, config)
+        validators, preformatters = cls._collect_field_callbacks(
+            new_attrs, bases, config
+        )
 
         # Store them in the namespace for later access
         new_attrs["__validators__"] = validators
@@ -336,9 +346,6 @@ class SchemaMeta(type):
     ) -> None:
         ann_with_defaults = OrderedDict()
         ann_without_defaults = OrderedDict()
-
-        # model_config_class: typing.Optional[typing.Type] = attrs.get("Config", None)
-        # config = ModelConfigWrapper(model_config_class)
 
         disable_all_validation = config.validation == ValidationFlags.NONE
 

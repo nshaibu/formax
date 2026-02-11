@@ -156,7 +156,9 @@ def _fast_init_body(
 
     field_names = list(attrs.get("__annotations__", []))
 
-    model_context_statement = f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
+    model_context_statement = (
+        f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
+    )
     body.append(model_context_statement)
 
     for field_name in field_names:
@@ -189,12 +191,8 @@ def _fast_init_body(
 
                 # validate value
                 mini_statement += f"\t{mini_field_name}._field_type_validator(coerced_{field_name}_value)\n"
-            else:
-                # for when a field is annotated with typing.Any
-                # mini_statement += f"\t{mini_field_name}._query.validate(coerced_{field_name}_value, {field_name!r})\n"
-                pass
 
-            mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
+                mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
 
         private_name = make_private_field(field_name)
         if frozen:

@@ -77,12 +77,25 @@ class _ClassSignatureMatcher:
         return bool(self.required) or bool(self.allowed)
 
 
-_BUILTIN_TYPES = frozenset({
-    int, float, str, bool, bytes, bytearray,
-    list, dict, set, tuple, frozenset,
-    complex, range, memoryview, NoneType
-})
-
+_BUILTIN_TYPES = frozenset(
+    {
+        int,
+        float,
+        str,
+        bool,
+        bytes,
+        bytearray,
+        list,
+        dict,
+        set,
+        tuple,
+        frozenset,
+        complex,
+        range,
+        memoryview,
+        NoneType,
+    }
+)
 
 
 class _ExpectedType:
@@ -126,7 +139,7 @@ class _ExpectedType:
         if self.is_class:
             name = getattr(self.type, "__name__", None)
             if name is None:
-                    return False
+                return False
             return name == "NoneType"
         return self.type is NoneType
 
@@ -185,10 +198,9 @@ class _ExpectedType:
         else:
             self.is_enum = False
 
-        self.is_model = (
-                PYDANTIC_MINI_MODEL_CONFIG in getattr(typ_, '__dict__', {}) or
-                is_dataclass(typ_)
-        )
+        self.is_model = PYDANTIC_MINI_MODEL_CONFIG in getattr(
+            typ_, "__dict__", {}
+        ) or is_dataclass(typ_)
 
     def resolve_type(
         self,

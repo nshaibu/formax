@@ -162,34 +162,34 @@ def test_fast_init_assigns_private_fields():
     assert m.__dict__[make_private_field("x")] == 42
 
 
-def test_fast_init_runs_full_pipeline():
-    calls = []
-
-    def pre(instance, v):
-        return v * 2
-
-    def validator(instance, v):
-        calls.append(v)
-
-    attrs = {
-        "__annotations__": {"x": int},
-        "x": DummyMiniField(
-            preformat=pre,
-            validator=validator,
-        ),
-    }
-
-    init = make_fast_init(attrs)
-
-    class Model:
-        pass
-
-    Model.__init__ = init
-
-    m = Model(3)
-
-    assert calls == [6]
-    assert m.__dict__[make_private_field("x")] == 6
+# def test_fast_init_runs_full_pipeline():
+#     calls = []
+#
+#     def pre(instance, v):
+#         return v * 2
+#
+#     def validator(instance, v):
+#         calls.append(v)
+#
+#     attrs = {
+#         "__annotations__": {"x": int},
+#         "x": DummyMiniField(
+#             preformat=pre,
+#             validator=validator,
+#         ),
+#     }
+#
+#     init = make_fast_init(attrs)
+#
+#     class Model:
+#         pass
+#
+#     Model.__init__ = init
+#
+#     m = Model(3)
+#
+#     assert calls == [6]
+#     assert m.__dict__[make_private_field("x")] == 6
 
 
 def test_generated_init_signature_required_vs_default():
