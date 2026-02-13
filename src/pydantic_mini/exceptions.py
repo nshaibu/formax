@@ -49,7 +49,7 @@ class ValidationError(Exception):
             lines.append(f"  {err['field']}: {err['message']}")
         return "\n".join(lines)
 
-    def errors(self) -> list[dict]:
+    def errors(self) -> typing.List[typing.Dict[str, typing.Any]]:
         return self._errors
 
     def error_count(self) -> int:
@@ -58,5 +58,5 @@ class ValidationError(Exception):
     def json(self) -> str:
         return json.dumps({"detail": "Validation failed", "errors": self._errors})
 
-    def dict(self) -> dict:
+    def dict(self) -> typing.Dict[str, typing.Any]:
         return {"detail": "Validation failed", "errors": self._errors}
