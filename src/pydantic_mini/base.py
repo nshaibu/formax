@@ -75,11 +75,38 @@ def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
         attrs["__slots__"] = tuple(private_slots) + slots
 
 
+def _process_validator_errors(
+    instance: "BaseModel",
+    field_name: str,
+    value: typing.Any,
+    error: Exception,
+    aggregate_errors: bool,
+) -> typing.Optional[Exception]:
+    if aggregate_errors:
+        error_list = getattr(instance, "_error_list", [])
+        if isinstance(error, ValidationError):
+            error_list.extend(error._errors)
+        else:
+            err = ValidationError(
+                message=str(error),
+                field=field_name,
+                value=value,
+                params={"exception_type": error.__class__.__name__},
+            )
+            error_list.extend(err._errors)
+
+        object.__setattr__(instance, "_error_list", error_list)
+        return None
+
+    return error
+
+
 def compile_callbacks(
     callbacks: typing.List[typing.Union[PreFormatType, ValidatorType]],
     name: str,
     field_name: str,
     callback_type: typing.Literal["validate", "preformat"],
+    aggregate_errors: bool = False,
 ) -> typing.Union[PreFormatType, ValidatorType]:
     lines = [f"def {name}_{callback_type}(instance, value):"]
 
@@ -89,24 +116,35 @@ def compile_callbacks(
         )
 
         for i, cb in enumerate(_callbacks):
-            lines.append(f"    if _cb{i}(instance, value) is False:")
+            params = {"validator": cb.__name__}
+            lines.append("\ttry:")
+            lines.append(f"\t\tif _cb{i}(instance, value) is False:")
             lines.append(
-                f"        raise ValidationError('Validation of field {field_name} failed.')"
+                f"\t\t\traise ValidationError('Validation of field {field_name} failed.', field_name={field_name!r}, value=value, params={params})"
             )
-        lines.append("    return None")
+            lines.append("\texcept Exception as err:")
+
+            # Error parsing
+            lines.append(
+                f"\t\terr = _process_validator_errors(instance, {field_name!r}, value, err, {aggregate_errors})"
+            )
+            lines.append(f"\t\tif err:\n\t\t\traise err")
+
+        lines.append("\treturn None")
     else:
         _callbacks = sorted(
             callbacks, key=lambda func: getattr(func, "_preformat_order", 0)
         )
 
         for i, cb in enumerate(_callbacks):
-            lines.append(f"    value = _cb{i}(instance, value)")
-        lines.append("    return value")
+            lines.append(f"\tvalue = _cb{i}(instance, value)")
+        lines.append("\treturn value")
 
     code = "\n".join(lines)
 
     global_ns = {f"_cb{i}": cb for i, cb in enumerate(callbacks)}
-    global_ns["ValidationError"] = ValidationError
+    global_ns["ValidationError"] = ValidationError  # type: ignore
+    global_ns["_process_validator_errors"] = _process_validator_errors  # type: ignore
     local_ns = {}
 
     exec(code, global_ns, local_ns)

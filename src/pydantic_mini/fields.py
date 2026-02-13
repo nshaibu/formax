@@ -654,7 +654,6 @@ class MiniField(_MiniFieldBase):
         instance: "BaseModel",
         resolve_forward_ref: bool = True,
     ):
-        # import pdb;pdb.set_trace()
         if self.model_config.forward_refs_as_any:
             resolve_forward_ref = False
 

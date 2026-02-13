@@ -437,7 +437,7 @@ class Attrib:
             if not (value <= self.le):
                 raise ValidationError(
                     f"Field value '{value}' is not less than or equal to '{self.le}'",
-                    # params={"le": self.le},
+                    params={"le": self.le},
                 )
         except TypeError:
             raise TypeError(
@@ -449,11 +449,11 @@ class Attrib:
             if not (len(value) >= self.min_length):
                 raise ValidationError(
                     "too_short",
-                    # {
-                    #     "field_type": "Value",
-                    #     "min_length": self.min_length,
-                    #     "actual_length": len(value),
-                    # },
+                    params={
+                        "field_type": "Value",
+                        "min_length": self.min_length,
+                        "actual_length": len(value),
+                    },
                 )
         except TypeError:
             raise TypeError(
@@ -466,11 +466,11 @@ class Attrib:
             if actual_length > self.max_length:
                 raise ValidationError(
                     f"Value is too long. {actual_length} > {self.max_length}",
-                    # {
-                    #     "field_type": "Value",
-                    #     "max_length": self.max_length,
-                    #     "actual_length": actual_length,
-                    # },
+                    params={
+                        "field_type": "Value",
+                        "max_length": self.max_length,
+                        "actual_length": actual_length,
+                    },
                 )
         except TypeError:
             raise TypeError(
@@ -482,7 +482,7 @@ class Attrib:
             if not re.match(self.pattern, value):
                 raise ValidationError(
                     f"Field value '{value}' does not match pattern",
-                    # params={"pattern": self.pattern, "value": value},
+                    params={"pattern": self.pattern, "value": value},
                 )
         except TypeError:
             raise TypeError(

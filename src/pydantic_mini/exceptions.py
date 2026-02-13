@@ -26,6 +26,7 @@ class ValidationError(Exception):
         errors: typing.List[typing.Dict[str, typing.Any]] = None,
         field: typing.Optional[str] = None,
         value: typing.Any = None,
+        params: typing.Dict[str, typing.Any] = None,
     ):
         if errors:
             # Multi-error mode
@@ -33,8 +34,11 @@ class ValidationError(Exception):
             self.fail_fast = False
             message = self._format_multi_error()
         else:
-            # Single error mode (fail-fast)
-            self._errors = [{"field": field, "message": message, "input": value}]
+            if params is None:
+                params = {}
+            self._errors = [
+                {"field": field, "message": message, "input": value, **params}
+            ]
             self.fail_fast = True
 
         super().__init__(message)
