@@ -1,22 +1,6 @@
 import json
 import typing
 
-# class ValidationError(Exception):
-#
-#     def __init__(self, message, code=None, params=None):
-#         super().__init__(message)
-#         self.message = message
-#         self.code = code
-#         self.params = params
-#
-#     def to_dict(self):
-#         return {
-#             "error_class": self.__class__.__name__,
-#             "message": self.message,
-#             "code": self.code,
-#             "params": self.params,
-#         }
-
 
 class ValidationError(Exception):
 
@@ -60,3 +44,40 @@ class ValidationError(Exception):
 
     def dict(self) -> typing.Dict[str, typing.Any]:
         return {"detail": "Validation failed", "errors": self._errors}
+
+
+class ValidationErrorCollector:
+    """Collects validation errors during schema mode validation."""
+
+    def __init__(self):
+        self.errors: typing.List[typing.Dict[str, typing.Any]] = []
+
+    def add_error(
+        self,
+        field: str,
+        message: str,
+        value: typing.Any,
+        location: typing.List[str] = None,
+        params: typing.Optional[typing.Dict[str, typing.Any]] = None,
+    ):
+        if params is None:
+            params = {}
+
+        self.errors.append(
+            {
+                "field": field,
+                "message": message,
+                "input": value,
+                "location": location or [field],
+                **params,
+            }
+        )
+
+    def has_errors(self) -> bool:
+        """Check if any errors were collected."""
+        return len(self.errors) > 0
+
+    def raise_if_errors(self):
+        """Raise ValidationError if any errors collected."""
+        if self.has_errors():
+            raise ValidationError(errors=self.errors)

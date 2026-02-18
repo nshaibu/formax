@@ -153,6 +153,7 @@ class ModelConfigWrapper:
     DEFAULT_INIT_STRATEGY = InitStrategy.DATACLASS
     DEFAULT_VALIDATION = ValidationFlags.VALIDATED
     DEFAULT_FORWARD_REFS_AS_ANY = False
+    DEFAULT_SCHEMA_MODE = False
 
     DEFAULT_DROP_INHERITED_VALIDATORS = False
     DEFAULT_DROP_INHERITED_PREFORMATTERS = False
@@ -179,11 +180,13 @@ class ModelConfigWrapper:
         # This, therefore, disables all validations for the field
         self.forward_refs_as_any: bool = self.DEFAULT_FORWARD_REFS_AS_ANY
 
+        self.schema_mode: bool = self.DEFAULT_SCHEMA_MODE
+
         self.drop_inherited_validators = self.DEFAULT_DROP_INHERITED_VALIDATORS
         self.drop_inherited_preformatters = self.DEFAULT_DROP_INHERITED_PREFORMATTERS
 
-        self.unsafe_disable_validators = self.DEFAULT_UNSAFE_DISABLE_VALIDATORS
-        self.unsafe_disable_preformatters = self.DEFAULT_UNSAFE_DISABLE_PREFORMATTERS
+        self.skip_validators = self.DEFAULT_UNSAFE_DISABLE_VALIDATORS
+        self.skip_preformatters = self.DEFAULT_UNSAFE_DISABLE_PREFORMATTERS
 
         self._config = config
 
@@ -270,6 +273,7 @@ class ModelConfigWrapper:
 
 class Attrib:
     __slots__ = (
+        "field_name",
         "default",
         "default_factory",
         "pre_formatter",
@@ -332,6 +336,7 @@ class Attrib:
             pattern (str or Pattern, optional): Regex pattern constraint.
             validators (List[Callable], optional): Additional callables that validate the input.
         """
+        self.field_name: typing.Optional[str] = None
         self.default = default
         self.default_factory = default_factory
         self.pre_formatter = pre_formatter
@@ -375,13 +380,16 @@ class Attrib:
         return len(self._validators) > 0
 
     def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
+        self.field_name = field_name
         if self.allow_none and value is None:
             return True
 
         if self.required and value is None:
             raise ValidationError(
                 f"Field '{field_name}' is required but not provided (value is None).",
-                params={"field_name": field_name},
+                field=field_name,
+                value=value,
+                params={"validators": "required_field"},
             )
 
         for name in ("gt", "ge", "lt", "le", "min_length", "max_length", "pattern"):
@@ -393,71 +401,120 @@ class Attrib:
                 continue
 
             validator = getattr(self, f"_validate_{name}")
-            validator(value)
+            try:
+                validator(value)
+            except ValidationError as e:
+                raise
         return True
 
     def _validate_gt(self, value: typing.Any):
+        params = {
+            "validator": "greater_than",
+            "comparison_operator": "gt",
+            "comparison_value": self.gt,
+        }
         try:
             if not (value > self.gt):
                 raise ValidationError(
                     f"Field value '{value}' is not greater than '{self.gt}'",
-                    params={"gt": self.gt},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'gt' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'gt' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"comparison_error": str(e), **params},
             )
 
     def _validate_ge(self, value: typing.Any):
+        params = {
+            "validator": "greater_than_or_equals_to",
+            "comparison_operator": "ge",
+            "comparison_value": self.ge,
+        }
         try:
             if not (value >= self.ge):
                 raise ValidationError(
                     f"Field value '{value}' is not greater than or equal to '{self.ge}'",
-                    params={"ge": self.ge},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'ge' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'ge' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_lt(self, value: typing.Any):
+        params = {
+            "validator": "less_than",
+            "comparison_operator": "lt",
+            "comparison_value": self.lt,
+        }
+
         try:
             if not (value < self.lt):
                 raise ValidationError(
                     f"Field value '{value}' is not less than '{self.lt}'",
-                    params={"lt": self.lt},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'lt' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'lt' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_le(self, value: typing.Any):
+        params = {
+            "validator": "less_than_or_equals_to",
+            "comparison_operator": "le",
+            "comparison_value": self.le,
+        }
+
         try:
             if not (value <= self.le):
                 raise ValidationError(
                     f"Field value '{value}' is not less than or equal to '{self.le}'",
-                    params={"le": self.le},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'le' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'le' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_min_length(self, value: typing.Any):
         try:
             if not (len(value) >= self.min_length):
                 raise ValidationError(
-                    "too_short",
+                    f"Field value '{value}' is too short, must be at least {self.min_length} characters",
+                    field=self.field_name,
+                    value=value,
                     params={
-                        "field_type": "Value",
+                        "validator": "too_short",
                         "min_length": self.min_length,
-                        "actual_length": len(value),
                     },
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'min_length' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'min_length' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"validator": "too_short", "min_length": self.min_length},
             )
 
     def _validate_max_length(self, value: typing.Any):
@@ -465,28 +522,39 @@ class Attrib:
             actual_length = len(value)
             if actual_length > self.max_length:
                 raise ValidationError(
-                    f"Value is too long. {actual_length} > {self.max_length}",
+                    f"Field value {value!r} is too long. {actual_length} > {self.max_length}",
+                    field=self.field_name,
+                    value=value,
                     params={
-                        "field_type": "Value",
+                        "validator": "too_long",
                         "max_length": self.max_length,
                         "actual_length": actual_length,
                     },
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'max_length' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'max_length' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"validator": "too_long", "max_length": self.max_length},
             )
 
     def _validate_pattern(self, value: typing.Any):
+        params = {"pattern": self.pattern, "validator": "pattern", "value": value}
         try:
             if not re.match(self.pattern, value):
                 raise ValidationError(
                     f"Field value '{value}' does not match pattern",
-                    params={"pattern": self.pattern, "value": value},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'pattern' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'pattern' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params=params,
             )
 
 

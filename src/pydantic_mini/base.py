@@ -27,17 +27,39 @@ from .utils import (
     PYDANTIC_MINI_MODEL_CONFIG,
     PYDANTIC_MINI_MODEL_CONTEXT,
     PYDANTIC_MINI_SIGNATURE_MATCHER,
+    PYDANTIC_MINI_ERROR_COLLECTOR,
 )
 from .make_init import (
     make_disable_all_validation_init,
     make_disable_type_check_init,
     make_fast_init,
 )
-from .exceptions import ValidationError
-from .fields import MiniField, _ClassSignatureMatcher, DisableAllValidationMiniField
+from .exceptions import ValidationError, ValidationErrorCollector
+from .utils import process_validator_errors
+from .fields import (
+    MiniField,
+    _ClassSignatureMatcher,
+    DisableAllValidationMiniField,
+    InitVarMiniField,
+)
 
 
 __all__ = ("BaseModel",)
+
+
+def wrap_schema_mode_init(cls) -> typing.Callable[[typing.Any], None]:
+    orig_init = cls.__init__
+
+    def new_init(self, *args, **kwargs):
+        collector = ValidationErrorCollector()
+        object.__setattr__(self, PYDANTIC_MINI_ERROR_COLLECTOR, collector)
+
+        orig_init(self, *args, **kwargs)
+
+        collector.raise_if_errors()
+        del collector
+
+    return new_init
 
 
 def _generate_fast_init(
@@ -64,7 +86,7 @@ def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
     else:
         slots = tuple(slots)
 
-    private_slots = []
+    private_slots = [PYDANTIC_MINI_ERROR_COLLECTOR]
 
     for fd in dc_fields:
         private_name = make_private_field(fd)
@@ -73,32 +95,6 @@ def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
 
     if private_slots:
         attrs["__slots__"] = tuple(private_slots) + slots
-
-
-def _process_validator_errors(
-    instance: "BaseModel",
-    field_name: str,
-    value: typing.Any,
-    error: Exception,
-    aggregate_errors: bool,
-) -> typing.Optional[Exception]:
-    if aggregate_errors:
-        error_list = getattr(instance, "_error_list", [])
-        if isinstance(error, ValidationError):
-            error_list.extend(error._errors)
-        else:
-            err = ValidationError(
-                message=str(error),
-                field=field_name,
-                value=value,
-                params={"exception_type": error.__class__.__name__},
-            )
-            error_list.extend(err._errors)
-
-        object.__setattr__(instance, "_error_list", error_list)
-        return None
-
-    return error
 
 
 def compile_callbacks(
@@ -126,7 +122,7 @@ def compile_callbacks(
 
             # Error parsing
             lines.append(
-                f"\t\terr = _process_validator_errors(instance, {field_name!r}, value, err, {aggregate_errors})"
+                f"\t\terr = process_validator_errors(instance, {field_name!r}, value, err, {aggregate_errors})"
             )
             lines.append(f"\t\tif err:\n\t\t\traise err")
 
@@ -144,7 +140,7 @@ def compile_callbacks(
 
     global_ns = {f"_cb{i}": cb for i, cb in enumerate(callbacks)}
     global_ns["ValidationError"] = ValidationError  # type: ignore
-    global_ns["_process_validator_errors"] = _process_validator_errors  # type: ignore
+    global_ns["process_validator_errors"] = process_validator_errors  # type: ignore
     local_ns = {}
 
     exec(code, global_ns, local_ns)
@@ -195,6 +191,9 @@ class SchemaMeta(type):
         new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
 
         new_class = dataclass(new_class, **dataclass_config)  # type: ignore
+
+        if config.schema_mode:
+            new_class.__init__ = wrap_schema_mode_init(new_class)
 
         # Let's activate the fields for type checking
         if config.should_typecheck():
@@ -420,25 +419,27 @@ class SchemaMeta(type):
                     field_name, attrs, value
                 )
                 if annotation is not typing.Any:
-                    actual_type = getattr(annotation, "type", get_args(annotation))
-                    if isinstance(actual_type, (tuple, list)):
-                        if actual_type:
-                            actual_type = actual_type[0]
-                        else:
-                            actual_type = object
-                    annotation = MiniAnnotated[actual_type, Attrib()]
+                    # actual_type = getattr(annotation, "type", get_args(annotation))
+                    # if isinstance(actual_type, (tuple, list)):
+                    #     if actual_type:
+                    #         actual_type = actual_type[0]
+                    #     else:
+                    #         actual_type = object
+                    # annotation = MiniAnnotated[actual_type, Attrib()]
+                    continue
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
 
                 if disable_all_validation:
                     attrs[field_name] = DisableAllValidationMiniField(
-                        field_name, annotation, config, value_field
+                        field_name, annotation, config, value_field.init, value_field
                     )
                 else:
                     attrs[field_name] = MiniField(
                         field_name,
                         annotation,
                         config,
+                        value_field.init,
                         value_field,
                     )
 
@@ -497,10 +498,12 @@ class SchemaMeta(type):
 
             if disable_all_validation:
                 mini_field = DisableAllValidationMiniField(
-                    field_name, annotation, config, value_field
+                    field_name, annotation, config, value_field.init, value_field
                 )
             else:
-                mini_field = MiniField(field_name, annotation, config, value_field)
+                mini_field = MiniField(
+                    field_name, annotation, config, value_field.init, value_field
+                )
 
                 if field_name in validators:
                     compiled_validator: ValidatorType = compile_callbacks(

@@ -24,6 +24,7 @@ from .typing import (
 from .exceptions import ValidationError
 from .utils import (
     make_private_field,
+    process_validator_errors,
     PYDANTIC_MINI_MODEL_CONFIG,
     PYDANTIC_MINI_SIGNATURE_MATCHER,
     PYDANTIC_MINI_MODEL_CONTEXT,
@@ -379,7 +380,7 @@ class _ExpectedTypeResolver:
 
         if matching_type is None:
             raise TypeError(
-                f"Cannot coerce {type(value).__name__} to any of the type(s) {self.type_string()}"
+                f"Cannot coerce {type(value).__name__!r} to any of the type(s) {self.type_string()!r}"
             )
 
         if matching_type.is_any:
@@ -441,6 +442,7 @@ class _ExpectedTypeResolver:
 class _MiniFieldBase:
 
     __slots__ = (
+        "init",
         "name",
         "private_name",
         "_mini_annotated_type",
@@ -460,6 +462,7 @@ class _MiniFieldBase:
         name: str,
         mini_annotated: Annotated,
         model_config: ModelConfigWrapper,
+        init: bool = False,
         dc_field_obj: typing.Optional[Field] = None,
     ):
         if not is_mini_annotated(mini_annotated):
@@ -467,6 +470,7 @@ class _MiniFieldBase:
                 "Field '{}' should be annotated with 'MiniAnnotated'.".format(name),
                 params={"field": name, "annotation": mini_annotated},
             )
+        self.init = init
         self.name = name
         self.private_name = make_private_field(name)
 
@@ -531,14 +535,26 @@ class _MiniFieldBase:
                 status = self._field_validator(instance, value)
                 if status is False:
                     raise ValidationError(
-                        "Validation of field '{}' with value '{}' failed.".format(
-                            self.name, value
-                        )
+                        f"Validation of field {self.name!r} with value {value!r} failed.",
+                        field=self.name,
+                        value=value,
+                        params={
+                            "validator": self._field_validator.__name__,
+                        },
                     )
             except Exception as e:
-                if isinstance(e, ValidationError):
-                    raise
-                raise ValidationError("Validation error") from e
+                # if isinstance(e, ValidationError):
+                #     raise
+                # raise ValidationError("Validation error") from e
+                err = process_validator_errors(
+                    instance,
+                    self.name,
+                    value=value,
+                    error=e,
+                    aggregate_errors=self.model_config.schema_mode,
+                )
+                if err:
+                    raise err
 
     def _init_type_expectations(
         self,
@@ -573,6 +589,12 @@ class _MiniFieldBase:
         self._preformat_callback = func
 
 
+class InitVarMiniField(_MiniFieldBase):
+    __slots__ = ()
+
+    # Init var
+
+
 class DisableAllValidationMiniField(_MiniFieldBase):
     __slots__ = ()
 
@@ -582,8 +604,10 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         name: str,
         mini_annotated: Annotated,
         model_config: ModelConfigWrapper,
+        init: bool = True,
         dc_field_obj: typing.Optional[Field] = None,
     ):
+        self.init = init
         self.name = name
         self.private_name = make_private_field(name)
 
@@ -628,9 +652,10 @@ class MiniField(_MiniFieldBase):
         name: str,
         mini_annotated: Annotated,
         model_config: ModelConfigWrapper,
+        init: bool = True,
         dc_field_obj: typing.Optional[Field] = None,
     ):
-        super().__init__(name, mini_annotated, model_config, dc_field_obj)
+        super().__init__(name, mini_annotated, model_config, init, dc_field_obj)
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
             self.type_can_be_validated(

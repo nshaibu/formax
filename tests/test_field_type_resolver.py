@@ -111,7 +111,9 @@ def test_required_parameter_missing():
 
 def test_resolution_failure():
     resolver = _ExpectedTypeResolver((int, Color), model_config=model_config)
-    with pytest.raises(TypeError, match="Cannot coerce str"):
+    with pytest.raises(
+        TypeError, match="Cannot coerce 'str' to any of the type\(s\) 'int, Color'"
+    ):
         resolver.coerce("not_an_int_or_enum")
 
 

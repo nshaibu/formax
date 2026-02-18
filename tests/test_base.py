@@ -425,7 +425,7 @@ class TestBase(unittest.TestCase):
     def test_init_model_is_call(self):
         class Person(BaseModel):
             name: str
-            school: InitVar[str]
+            school: InitVar[str] = None
 
             def __post_init__(self, school):
                 self.school = school
@@ -544,7 +544,7 @@ class TestBase(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.DisabledTypeCheckValidationClass(email="nafiu", value="me")
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(ValidationError):
             self.DisabledTypeCheckValidationClass(email="nafiu@ex.com", value="me")
 
     def test_coercion_doesnt_work_in_strict_mode(self):
