@@ -737,13 +737,24 @@ class MiniField(_MiniFieldBase):
 
             self._finalise_type_resolver()
 
-            coerced_value = self._value_coerce(value)
+            try:
+                coerced_value = self._value_coerce(value)
+            except Exception as e:
+                err = process_validator_errors(
+                    instance,
+                    field_name=self.name,
+                    value=value,
+                    error=e,
+                    aggregate_errors=self.model_config.schema_mode,
+                )
+                if err:
+                    raise err
+                coerced_value = None
+
             if coerced_value is not None:
                 value = coerced_value
-            self._field_type_validator(value)
-        else:
-            # run other field validators when type checking is disabled
-            self._query.validate(value, self.name)
+
+            self._field_type_validator(instance, value)
 
         self.run_validators(instance, value)
 
@@ -780,7 +791,7 @@ class MiniField(_MiniFieldBase):
 
         return None
 
-    def _field_type_validator(self, value: typing.Any) -> None:
+    def _field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if self.is_collection:
             if self.inner_type:
                 # old_config = self.inner_type.model_config
@@ -791,19 +802,35 @@ class MiniField(_MiniFieldBase):
 
                 for val in value:
                     if not self.inner_type.validate(val):
-                        raise TypeError(
+                        error = TypeError(
                             f"Expected a collection of values of type(s) '{self.inner_type.type_string()}'. Value: {val} "
                         )
+                        error = process_validator_errors(
+                            instance,
+                            field_name=self.name,
+                            value=val,
+                            error=error,
+                            aggregate_errors=self.model_config.schema_mode,
+                        )
+                        if error:
+                            raise error
 
                 # self.inner_type.model_config = old_config
             #  del new_config
         elif not self.expected_type.validate(value):
-            raise TypeError(
+            error = TypeError(
                 f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
                 f"but got {type(value).__name__}."
             )
-
-        self._query.validate(value, self.name)
+            error = process_validator_errors(
+                instance,
+                field_name=self.name,
+                value=value,
+                error=error,
+                aggregate_errors=self.model_config.schema_mode,
+            )
+            if error:
+                raise error
 
     def type_can_be_validated(
         self,

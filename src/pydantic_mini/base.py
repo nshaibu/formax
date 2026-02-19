@@ -102,6 +102,7 @@ def compile_callbacks(
     name: str,
     field_name: str,
     callback_type: typing.Literal["validate", "preformat"],
+    attrib_query: typing.Optional[Attrib] = None,
     aggregate_errors: bool = False,
 ) -> typing.Union[PreFormatType, ValidatorType]:
     lines = [f"def {name}_{callback_type}(instance, value):"]
@@ -110,6 +111,12 @@ def compile_callbacks(
         _callbacks = sorted(
             callbacks, key=lambda func: getattr(func, "_validator_order", 0)
         )
+
+        # Inbuilt validators
+        if attrib_query:
+            lines.append(
+                f"\tattrib_query_{field_name}.validate(instance, value, {field_name!r}, {aggregate_errors})\n"
+            )
 
         for i, cb in enumerate(_callbacks):
             params = {"validator": cb.__name__}
@@ -141,6 +148,8 @@ def compile_callbacks(
     global_ns = {f"_cb{i}": cb for i, cb in enumerate(callbacks)}
     global_ns["ValidationError"] = ValidationError  # type: ignore
     global_ns["process_validator_errors"] = process_validator_errors  # type: ignore
+    global_ns[f"attrib_query_{field_name}"] = attrib_query  # type: ignore
+
     local_ns = {}
 
     exec(code, global_ns, local_ns)
@@ -435,13 +444,27 @@ class SchemaMeta(type):
                         field_name, annotation, config, value_field.init, value_field
                     )
                 else:
-                    attrs[field_name] = MiniField(
+                    mini_field = MiniField(
                         field_name,
                         annotation,
                         config,
                         value_field.init,
                         value_field,
                     )
+
+                    cls.validator_hook(
+                        mini_field,
+                        Attrib(),
+                        field_name,
+                        validators.get(field_name, []),
+                        config.schema_mode,
+                    )
+
+                    cls.preformat_hook(
+                        mini_field, field_name, preformatters.get(field_name, [])
+                    )
+
+                    attrs[field_name] = mini_field
 
                 continue
 
@@ -505,17 +528,17 @@ class SchemaMeta(type):
                     field_name, annotation, config, value_field.init, value_field
                 )
 
-                if field_name in validators:
-                    compiled_validator: ValidatorType = compile_callbacks(
-                        validators[field_name], "field", field_name, "validate"
-                    )
-                    mini_field.set_validator(compiled_validator)
+                cls.validator_hook(
+                    mini_field,
+                    attrib,
+                    field_name,
+                    validators.get(field_name, []),
+                    config.schema_mode,
+                )
 
-                if field_name in preformatters:
-                    compiled_preformat_callback: PreFormatType = compile_callbacks(
-                        preformatters[field_name], "field", field_name, "preformat"
-                    )
-                    mini_field.set_preformat_callback(compiled_preformat_callback)
+                cls.preformat_hook(
+                    mini_field, field_name, preformatters.get(field_name, [])
+                )
 
             attrs[field_name] = mini_field
 
@@ -525,6 +548,38 @@ class SchemaMeta(type):
             attrs["__annotations__"] = ann_without_defaults
 
         return None
+
+    @staticmethod
+    def preformat_hook(
+        mini_field: MiniField,
+        field_name: str,
+        preformat_list: typing.List[PreFormatType],
+    ) -> None:
+        if not preformat_list:
+            return
+
+        compiled_preformat_callback: PreFormatType = compile_callbacks(
+            preformat_list, "field", field_name, "preformat"
+        )
+        mini_field.set_preformat_callback(compiled_preformat_callback)
+
+    @staticmethod
+    def validator_hook(
+        mini_field: MiniField,
+        attrib_query: Attrib,
+        field_name: str,
+        validator_list: typing.List[ValidatorType],
+        schema_mode: bool,
+    ) -> None:
+        compiled_validator: ValidatorType = compile_callbacks(
+            validator_list,
+            "field",
+            field_name,
+            "validate",
+            attrib_query,
+            schema_mode,
+        )
+        mini_field.set_validator(compiled_validator)
 
 
 class PreventOverridingMixin:

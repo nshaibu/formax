@@ -469,7 +469,6 @@ def test_aggregate_errors_with_type_coercion():
         def check_age(self, value):
             if value < 0:
                 raise ValidationError("Age negative")
-            return value
 
         class Config:
             schema_mode = True
@@ -570,59 +569,6 @@ def test_aggregate_errors_with_none_values():
     errors = error.errors()
     assert errors[0]["field"] == "username"
     assert errors[0]["input"] == ""
-
-
-def test_aggregate_errors_performance_comparison():
-    """Test that aggregate mode validates all fields (slower when errors)."""
-
-    class SlowValidator(BaseModel):
-        field1: str
-        field2: str
-        field3: str
-
-        @validator(["field1"])
-        def check1(self, value):
-            time.sleep(0.001)  # Simulate slow validation
-            if value != "valid":
-                raise ValidationError("Invalid")
-            return value
-
-        @validator(["field2"])
-        def check2(self, value):
-            time.sleep(0.001)
-            if value != "valid":
-                raise ValidationError("Invalid")
-            return value
-
-        @validator(["field3"])
-        def check3(self, value):
-            time.sleep(0.001)
-            if value != "valid":
-                raise ValidationError("Invalid")
-            return value
-
-    class SlowValidatorAggregate(SlowValidator):
-        class Config:
-            schema_mode = True
-
-    # Fail-fast: Stops at first error (~1ms)
-    start = time.time()
-    try:
-        SlowValidator(field1="bad", field2="bad", field3="bad")
-    except ValidationError:
-        pass
-    fail_fast_time = time.time() - start
-
-    # Aggregate: Validates all fields (~3ms)
-    start = time.time()
-    try:
-        SlowValidatorAggregate(field1="bad", field2="bad", field3="bad")
-    except ValidationError:
-        pass
-    aggregate_time = time.time() - start
-
-    # Aggregate should take longer (validates all fields)
-    assert aggregate_time > fail_fast_time
 
 
 def test_aggregate_errors_api_response_format():

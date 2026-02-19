@@ -21,6 +21,7 @@ else:
     from typing import Annotated, get_origin, get_args, ForwardRef
 
 from .exceptions import ValidationError
+from .utils import process_validator_errors
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
@@ -340,8 +341,8 @@ class Attrib:
         self.default = default
         self.default_factory = default_factory
         self.pre_formatter = pre_formatter
-        self.required = required
-        self.allow_none = allow_none
+        # self.required = required
+        # self.allow_none = allow_none
         self.help_text = help_text
         self.gt = gt
         self.ge = ge
@@ -379,18 +380,25 @@ class Attrib:
     def has_validators(self):
         return len(self._validators) > 0
 
-    def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
-        self.field_name = field_name
-        if self.allow_none and value is None:
-            return True
+    def validate(
+        self,
+        instance: "BaseModel",
+        value: typing.Any,
+        field_name: str,
+        aggregate_errors: bool,
+    ) -> typing.Optional[bool]:
 
-        if self.required and value is None:
-            raise ValidationError(
-                f"Field '{field_name}' is required but not provided (value is None).",
-                field=field_name,
-                value=value,
-                params={"validators": "required_field"},
-            )
+        self.field_name = field_name
+        # if self.allow_none and value is None:
+        #     return True
+
+        # if self.required and value is None:
+        #     raise ValidationError(
+        #         f"Field '{field_name}' is required but not provided (value is None).",
+        #         field=field_name,
+        #         value=value,
+        #         params={"validators": "required_field"},
+        #     )
 
         for name in ("gt", "ge", "lt", "le", "min_length", "max_length", "pattern"):
             validation_factor = getattr(self, name, None)
@@ -403,8 +411,16 @@ class Attrib:
             validator = getattr(self, f"_validate_{name}")
             try:
                 validator(value)
-            except ValidationError as e:
-                raise
+            except Exception as e:
+                err = process_validator_errors(
+                    instance=instance,
+                    field_name=field_name,
+                    value=value,
+                    error=e,
+                    aggregate_errors=aggregate_errors,
+                )
+                if err:
+                    raise err
         return True
 
     def _validate_gt(self, value: typing.Any):
