@@ -43,8 +43,6 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                # disable_all_validation = True
-                # init_strategy: InitStrategy = InitStrategy.DATACLASS
                 validation = ValidationFlags.NONE
 
         class DisabledTypeCheckValidationClass(BaseModel):
@@ -54,11 +52,7 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                # disable_typecheck = True
-                # init_strategy: InitStrategy = InitStrategy.DATACLASS
                 validation = ValidationFlags.COERCE
-
-        # import pdb; pdb.set_trace()
 
         cls.MyModel = MyModel
         cls.DataClassField = DataClassField

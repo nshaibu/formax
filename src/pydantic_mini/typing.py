@@ -151,7 +151,7 @@ class ModelConfigWrapper:
     DEFAULT_FROZEN = False
 
     # Pydantic-mini specific
-    DEFAULT_INIT_STRATEGY = InitStrategy.FAST
+    DEFAULT_INIT_STRATEGY = InitStrategy.DATACLASS
     DEFAULT_VALIDATION = ValidationFlags.VALIDATED
     DEFAULT_FORWARD_REFS_AS_ANY = False
     DEFAULT_SCHEMA_MODE = False
