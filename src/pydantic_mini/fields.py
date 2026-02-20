@@ -460,7 +460,7 @@ class _MiniFieldBase:
     def __init__(
         self,
         name: str,
-        mini_annotated: Annotated,
+        mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = False,
         dc_field_obj: typing.Optional[Field] = None,
@@ -543,9 +543,6 @@ class _MiniFieldBase:
                         },
                     )
             except Exception as e:
-                # if isinstance(e, ValidationError):
-                #     raise
-                # raise ValidationError("Validation error") from e
                 err = process_validator_errors(
                     instance,
                     self.name,
@@ -589,12 +586,6 @@ class _MiniFieldBase:
         self._preformat_callback = func
 
 
-class InitVarMiniField(_MiniFieldBase):
-    __slots__ = ()
-
-    # Init var
-
-
 class DisableAllValidationMiniField(_MiniFieldBase):
     __slots__ = ()
 
@@ -602,7 +593,7 @@ class DisableAllValidationMiniField(_MiniFieldBase):
     def __init__(
         self,
         name: str,
-        mini_annotated: Annotated,
+        mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = True,
         dc_field_obj: typing.Optional[Field] = None,
@@ -650,7 +641,7 @@ class MiniField(_MiniFieldBase):
     def __init__(
         self,
         name: str,
-        mini_annotated: Annotated,
+        mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = True,
         dc_field_obj: typing.Optional[Field] = None,

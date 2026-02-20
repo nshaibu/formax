@@ -34,19 +34,19 @@ def test_nested_pydantic_mini(benchmark, nested_data):
     benchmark(lambda: UserNestedMini(**nested_data))
 
 
-def test_nested_disable_all_validation(benchmark, nested_data):
+def test_nested_disable_all_validation_pydantic_mini(benchmark, nested_data):
     benchmark(lambda: DisableAllValidationMini(**nested_data))
 
 
-def test_nested_disable_type_check(benchmark, nested_data):
+def test_nested_disable_type_check_pydantic_mini(benchmark, nested_data):
     benchmark(lambda: DisableTypeCheckMini(**nested_data))
 
 
-def test_flat_disable_all_validation(benchmark, data):
+def test_flat_disable_all_validation_pydantic_mini(benchmark, data):
     benchmark(lambda: FlatDisableAllValidationProfileMini(**data))
 
 
-def test_flat_disable_type_check(benchmark, data):
+def test_flat_disable_type_check_pydantic_mini(benchmark, data):
     benchmark(lambda: FlatDisableTypeCheckProfileMini(**data))
 
 

@@ -41,7 +41,6 @@ from .fields import (
     MiniField,
     _ClassSignatureMatcher,
     DisableAllValidationMiniField,
-    InitVarMiniField,
 )
 
 
