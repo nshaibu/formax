@@ -58,6 +58,8 @@ class TestBase(unittest.TestCase):
                 # init_strategy: InitStrategy = InitStrategy.DATACLASS
                 validation = ValidationFlags.COERCE
 
+        # import pdb; pdb.set_trace()
+
         cls.MyModel = MyModel
         cls.DataClassField = DataClassField
         cls.AnnotatedDataClass = AnnotatedDataClass

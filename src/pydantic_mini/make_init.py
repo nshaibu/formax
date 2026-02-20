@@ -51,8 +51,7 @@ def _post_init_call_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
     init_fields = attrs.get(PYDANTIC_INIT_VARS_FIELDS, [])
     args_str = join_string(init_fields)
     lines = (
-        "\tif '__post_init__' in dir(self):",
-        f"\t\tself.__post_init__({args_str[:-1]})",
+        f"\tself.__post_init__({args_str[:-1]})",
     )
     return "\n".join(lines)
 
@@ -80,7 +79,8 @@ def _disable_all_validation_init_body(
         else:
             continue
 
-    body.append(_post_init_call_codegen(attrs))
+    if '__post_init__' in attrs:
+        body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
@@ -140,7 +140,8 @@ def _disable_type_check_init_body(
         )
         body.append(statement)
 
-    body.append(_post_init_call_codegen(attrs))
+    if '__post_init__' in attrs:
+        body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
@@ -231,7 +232,8 @@ def _fast_init_body(
             )
         body.append(mini_statement)
 
-    body.append(_post_init_call_codegen(attrs))
+    if '__post_init__' in attrs:
+        body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
