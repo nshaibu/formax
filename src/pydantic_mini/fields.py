@@ -794,16 +794,11 @@ class MiniField(_MiniFieldBase):
     def _field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if self.is_collection:
             if self.inner_type:
-                # old_config = self.inner_type.model_config
-                # if not self.inner_type.model_config.should_typecheck():
-
-                # new_config = old_config.copy(validation=ValidationFlags.TYPECHECK)
-                # self.inner_type.model_config = new_config
 
                 for val in value:
                     if not self.inner_type.validate(val):
                         error = TypeError(
-                            f"Expected a collection of values of type(s) '{self.inner_type.type_string()}'. Value: {val} "
+                            f"Expected a collection of values of type(s) '{self.inner_type.type_string()}'. Value: {val!r} "
                         )
                         error = process_validator_errors(
                             instance,
@@ -815,12 +810,10 @@ class MiniField(_MiniFieldBase):
                         if error:
                             raise error
 
-                # self.inner_type.model_config = old_config
-            #  del new_config
         elif not self.expected_type.validate(value):
             error = TypeError(
-                f"Field '{self.name!r}' should be of type {self.expected_type.type_string()}, "
-                f"but got {type(value).__name__}."
+                f"Field '{self.name!r}' should be of type {self.expected_type.type_string()!r}, "
+                f"but got {type(value).__name__!r}."
             )
             error = process_validator_errors(
                 instance,

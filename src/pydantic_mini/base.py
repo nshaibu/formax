@@ -28,6 +28,7 @@ from .utils import (
     PYDANTIC_MINI_MODEL_CONTEXT,
     PYDANTIC_MINI_SIGNATURE_MATCHER,
     PYDANTIC_MINI_ERROR_COLLECTOR,
+    PYDANTIC_INIT_VARS_FIELDS,
 )
 from .make_init import (
     make_disable_all_validation_init,
@@ -177,8 +178,10 @@ class SchemaMeta(type):
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
         new_attrs[PYDANTIC_MINI_MODEL_CONTEXT] = None
+        new_attrs[PYDANTIC_INIT_VARS_FIELDS] = cls._prepare_model_fields(
+            new_attrs, validators, preformatters, config
+        )
 
-        cls._prepare_model_fields(new_attrs, validators, preformatters, config)
         dataclass_config: typing.Dict[str, typing.Any] = config.as_dataclass_kwargs()
 
         if config.init_strategy == InitStrategy.FAST:
@@ -389,9 +392,11 @@ class SchemaMeta(type):
         validators: typing.Dict[str, typing.List[ValidatorType]],
         preformatters: typing.Dict[str, typing.List[PreFormatType]],
         config: ModelConfigWrapper,
-    ) -> None:
+    ) -> typing.List[str]:
         ann_with_defaults = OrderedDict()
         ann_without_defaults = OrderedDict()
+
+        init_var_fields = []
 
         disable_all_validation = config.validation == ValidationFlags.NONE
 
@@ -428,13 +433,8 @@ class SchemaMeta(type):
                     field_name, attrs, value
                 )
                 if annotation is not typing.Any:
-                    # actual_type = getattr(annotation, "type", get_args(annotation))
-                    # if isinstance(actual_type, (tuple, list)):
-                    #     if actual_type:
-                    #         actual_type = actual_type[0]
-                    #     else:
-                    #         actual_type = object
-                    # annotation = MiniAnnotated[actual_type, Attrib()]
+                    if is_initvar_type(annotation):
+                        init_var_fields.append(field_name)  # TODO: refactor this code
                     continue
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
@@ -474,7 +474,7 @@ class SchemaMeta(type):
                     forward_annotation = get_forward_type(annotation)
                     if forward_annotation is None:
                         raise TypeError(
-                            f"Field '{field_name!r}' must be annotated with a real type. {annotation} is not a type"
+                            f"Field {field_name!r} must be annotated with a real type. {annotation} is not a type"
                         )
 
                 annotation = MiniAnnotated[
@@ -547,7 +547,7 @@ class SchemaMeta(type):
         if ann_without_defaults:
             attrs["__annotations__"] = ann_without_defaults
 
-        return None
+        return init_var_fields
 
     @staticmethod
     def preformat_hook(

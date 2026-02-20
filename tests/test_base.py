@@ -501,6 +501,9 @@ class TestBase(unittest.TestCase):
             class Person(BaseModel):
                 names: typing.List[str]
 
+                class Config:
+                    init_strategy = InitStrategy.DATACLASS
+
                 def __init__(self, names):
                     self.names = names
 

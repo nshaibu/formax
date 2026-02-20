@@ -151,7 +151,7 @@ class ModelConfigWrapper:
     DEFAULT_FROZEN = False
 
     # Pydantic-mini specific
-    DEFAULT_INIT_STRATEGY = InitStrategy.DATACLASS
+    DEFAULT_INIT_STRATEGY = InitStrategy.FAST
     DEFAULT_VALIDATION = ValidationFlags.VALIDATED
     DEFAULT_FORWARD_REFS_AS_ANY = False
     DEFAULT_SCHEMA_MODE = False
@@ -278,9 +278,7 @@ class Attrib:
         "default",
         "default_factory",
         "pre_formatter",
-        "required",
         "help_text",
-        "allow_none",
         "gt",
         "ge",
         "lt",
@@ -296,9 +294,7 @@ class Attrib:
         default: typing.Optional[typing.Any] = MISSING,
         default_factory: typing.Optional[typing.Callable[[], typing.Any]] = MISSING,
         pre_formatter: typing.Union[PreFormatType, MISSING] = MISSING,
-        required: bool = False,
         help_text: typing.Optional[str] = None,
-        allow_none: bool = False,
         gt: typing.Optional[float] = None,
         ge: typing.Optional[float] = None,
         lt: typing.Optional[float] = None,
@@ -315,8 +311,6 @@ class Attrib:
             default (Any): A default value for the attribute, if provided.
             default_factory (Callable): A callable that generates a default value.
             pre_formatter (Callable): A function to preprocess/format the value before validation.
-            required (bool): Whether the attribute is required.
-            allow_none (bool): Whether None is an acceptable value.
             gt (float): Value must be greater than this (exclusive).
             ge (float): Value must be greater than or equal to this (inclusive).
             lt (float): Value must be less than this (exclusive).
@@ -330,8 +324,6 @@ class Attrib:
             default (Any, optional): Static default value to use if none is provided.
             default_factory (Callable, optional): Function that returns a default value.
             pre_formatter (Callable, optional): Function to format/preprocess the value before validation.
-            required (bool): Whether this field is required (default: False).
-            allow_none (bool): Whether None is allowed as a value (default: False).
             gt, ge, lt, le (float, optional): Numeric comparison constraints.
             min_length, max_length (int, optional): Length constraints for sequences.
             pattern (str or Pattern, optional): Regex pattern constraint.
@@ -341,8 +333,6 @@ class Attrib:
         self.default = default
         self.default_factory = default_factory
         self.pre_formatter = pre_formatter
-        # self.required = required
-        # self.allow_none = allow_none
         self.help_text = help_text
         self.gt = gt
         self.ge = ge
@@ -389,16 +379,6 @@ class Attrib:
     ) -> typing.Optional[bool]:
 
         self.field_name = field_name
-        # if self.allow_none and value is None:
-        #     return True
-
-        # if self.required and value is None:
-        #     raise ValidationError(
-        #         f"Field '{field_name}' is required but not provided (value is None).",
-        #         field=field_name,
-        #         value=value,
-        #         params={"validators": "required_field"},
-        #     )
 
         for name in ("gt", "ge", "lt", "le", "min_length", "max_length", "pattern"):
             validation_factor = getattr(self, name, None)

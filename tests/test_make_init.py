@@ -58,7 +58,7 @@ class DummyMiniField:
     def _value_coerce(self, value):
         return None
 
-    def _field_type_validator(self, value):
+    def _field_type_validator(self, instance, value):
         pass
 
 
@@ -116,7 +116,6 @@ def test_disable_all_validation_runs_preformatter():
 
 
 def test_disable_type_check_runs_query_and_validator():
-    query = DummyQuery()
     calls = []
 
     def validator(instance, value):
@@ -126,7 +125,6 @@ def test_disable_type_check_runs_query_and_validator():
         "__annotations__": {"x": int},
         "x": DummyMiniField(
             validator=validator,
-            query=query,
         ),
     }
 
@@ -140,7 +138,6 @@ def test_disable_type_check_runs_query_and_validator():
     m = Model(5)
 
     assert calls == [5]
-    assert query.calls == [(5, "x")]
     assert m.__dict__[make_private_field("x")] == 5
 
 
@@ -162,34 +159,36 @@ def test_fast_init_assigns_private_fields():
     assert m.__dict__[make_private_field("x")] == 42
 
 
-# def test_fast_init_runs_full_pipeline():
-#     calls = []
-#
-#     def pre(instance, v):
-#         return v * 2
-#
-#     def validator(instance, v):
-#         calls.append(v)
-#
-#     attrs = {
-#         "__annotations__": {"x": int},
-#         "x": DummyMiniField(
-#             preformat=pre,
-#             validator=validator,
-#         ),
-#     }
-#
-#     init = make_fast_init(attrs)
-#
-#     class Model:
-#         pass
-#
-#     Model.__init__ = init
-#
-#     m = Model(3)
-#
-#     assert calls == [6]
-#     assert m.__dict__[make_private_field("x")] == 6
+def test_fast_init_runs_full_pipeline():
+    calls = []
+
+    def pre(instance, v):
+        return v * 2
+
+    def validator(instance, v):
+        calls.append(v)
+
+    setattr(DummyMiniField, "__name__", "MiniField")
+
+    attrs = {
+        "__annotations__": {"x": int},
+        "x": DummyMiniField(
+            preformat=pre,
+            validator=validator,
+        ),
+    }
+
+    init = make_fast_init(attrs)
+
+    class Model:
+        pass
+
+    Model.__init__ = init
+
+    m = Model(3)
+
+    assert calls == [6]
+    assert m.__dict__[make_private_field("x")] == 6
 
 
 def test_generated_init_signature_required_vs_default():

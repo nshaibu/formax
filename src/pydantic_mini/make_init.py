@@ -2,10 +2,18 @@ import typing
 from dataclasses import MISSING
 
 from .fields import MiniField
-from .utils import make_private_field, PYDANTIC_MINI_MODEL_CONTEXT
+from .utils import (
+    make_private_field,
+    PYDANTIC_MINI_MODEL_CONTEXT,
+    PYDANTIC_INIT_VARS_FIELDS,
+    process_validator_errors,
+    PYDANTIC_MINI_MODEL_CONFIG,
+)
 
 
-def join_string(str_list: typing.List[str], sep: str = ",") -> str:
+def join_string(
+    str_list: typing.Union[typing.List[str], typing.Tuple[str, ...]], sep: str = ","
+) -> str:
     """Combine strings separated by sep."""
     if not str_list:
         return ""
@@ -33,14 +41,20 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
             # No MiniField found - required field
             params.append(field_name)
 
-    default_params_str = join_string(default_params)
-    params_str = join_string(params)
+    args_tuple = ("self", *params, *default_params)
+    args_str = join_string(args_tuple)
 
-    return f"def __init__(self, {params_str} {default_params_str[:-1]}):"
+    return f"def __init__({args_str[:-1]}):"
 
 
-def _post_init_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
-    pass
+def _post_init_call_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
+    init_fields = attrs.get(PYDANTIC_INIT_VARS_FIELDS, [])
+    args_str = join_string(init_fields)
+    lines = (
+        "\tif '__post_init__' in dir(self):",
+        f"\t\tself.__post_init__({args_str[:-1]})",
+    )
+    return "\n".join(lines)
 
 
 def _disable_all_validation_init_body(
@@ -54,14 +68,19 @@ def _disable_all_validation_init_body(
     for field_name in field_names:
         cb_statement = ""
         mini_field: typing.Optional[MiniField] = attrs.get(field_name)
-        if mini_field and mini_field._preformat_callback:
-            cb_name = f"preformat_{field_name}"
-            cbs[cb_name] = mini_field._preformat_callback
-            cb_statement = f"\t{field_name} = {cb_name}(self, {field_name})\n"
+        if mini_field:
+            if mini_field._preformat_callback:
+                cb_name = f"preformat_{field_name}"
+                cbs[cb_name] = mini_field._preformat_callback
+                cb_statement = f"\t{field_name} = {cb_name}(self, {field_name})\n"
 
-        private_name = make_private_field(field_name)
-        statement = cb_statement + f"\tself.__dict__[{private_name!r}]={field_name}"
-        body.append(statement)
+            private_name = make_private_field(field_name)
+            statement = cb_statement + f"\tself.__dict__[{private_name!r}]={field_name}"
+            body.append(statement)
+        else:
+            continue
+
+    body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
@@ -96,7 +115,6 @@ def _disable_type_check_init_body(
     for field_name in field_names:
         cb_statement = ""
         validator_cbs_statement = ""
-        query_validator_cbs_statement = ""
 
         mini_field: typing.Optional[MiniField] = attrs.get(field_name)
 
@@ -111,20 +129,18 @@ def _disable_type_check_init_body(
                 validator_cbs[vbs_name] = mini_field._field_validator
                 validator_cbs_statement = f"\t{vbs_name}(self, {field_name})\n"
 
-            query_name = f"validator_query_{field_name}"
-            validator_queries[query_name] = mini_field._query
-            query_validator_cbs_statement = (
-                f"\t{query_name}.validate({field_name}, {field_name!r})\n"
-            )
+        else:
+            continue
 
         private_name = make_private_field(field_name)
         statement = (
             cb_statement
-            + query_validator_cbs_statement
             + validator_cbs_statement
             + f"\tself.__dict__[{private_name!r}]={field_name}"
         )
         body.append(statement)
+
+    body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
@@ -159,7 +175,12 @@ def _fast_init_body(
     model_context_statement = (
         f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
     )
+    model_config_statement = (
+        f"\tmodel_config = getattr(self, {PYDANTIC_MINI_MODEL_CONFIG!r}, None)\n"
+    )
+
     body.append(model_context_statement)
+    body.append(model_config_statement)
 
     for field_name in field_names:
         mini_statement = ""
@@ -183,16 +204,23 @@ def _fast_init_body(
                 mini_statement += f"\t{mini_field_name}._finalise_type_resolver()\n\n"
 
                 # condition for coercing values
-                mini_statement += f"\tcoerced_{field_name} = {mini_field_name}._value_coerce(coerced_{field_name}_value)\n"
-                mini_statement += f"\tif coerced_{field_name} is not None:\n"
+                mini_statement += "\ttry:\n"
+                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}._value_coerce(coerced_{field_name}_value)\n"
+                mini_statement += f"\t\tif coerced_{field_name} is not None:\n"
                 mini_statement += (
-                    f"\t\tcoerced_{field_name}_value = coerced_{field_name}\n\n"
+                    f"\t\t\tcoerced_{field_name}_value = coerced_{field_name}\n\n"
                 )
+                mini_statement += "\texcept Exception as err:\n"
+                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name}_value,error=err,aggregate_errors=model_config.schema_mode)\n"
+                mini_statement += f"\t\tif err:\n"
+                mini_statement += f"\t\t\traise err\n"
 
                 # validate value
-                mini_statement += f"\t{mini_field_name}._field_type_validator(coerced_{field_name}_value)\n"
+                mini_statement += f"\t{mini_field_name}._field_type_validator(self, coerced_{field_name}_value)\n"
 
                 mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
+        else:
+            continue
 
         private_name = make_private_field(field_name)
         if frozen:
@@ -202,6 +230,8 @@ def _fast_init_body(
                 f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
             )
         body.append(mini_statement)
+
+    body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
 
@@ -217,6 +247,7 @@ def make_fast_init(
     code = "\n".join(statements)
 
     local_ns = {}
+    cbs["process_validator_errors"] = process_validator_errors
     # import pdb; pdb.set_trace()
 
     exec(code, cbs, local_ns)

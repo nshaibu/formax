@@ -17,6 +17,8 @@ _DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
 PYDANTIC_MINI_ERROR_COLLECTOR = "_pydantic_mini_internal_error_collect"
 
+PYDANTIC_INIT_VARS_FIELDS = "__pydantic_mini_init_vars__"
+
 
 def make_private_field(field_name):
     return f"{PRIVATE_FIELD_PREFIX}{field_name}"
