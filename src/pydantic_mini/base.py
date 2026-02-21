@@ -123,7 +123,7 @@ def compile_callbacks(
             lines.append("\ttry:")
             lines.append(f"\t\tif _cb{i}(instance, value) is False:")
             lines.append(
-                f"\t\t\traise ValidationError('Validation of field {field_name} failed.', field_name={field_name!r}, value=value, params={params})"
+                f"\t\t\traise ValidationError('Validation of field {field_name} failed.',field_name={field_name!r},value=value,params={params})"
             )
             lines.append("\texcept Exception as err:")
 
