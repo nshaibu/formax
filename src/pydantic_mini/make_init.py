@@ -1,4 +1,5 @@
 import typing
+import inspect
 from dataclasses import MISSING
 
 from .fields import MiniField
@@ -176,6 +177,7 @@ def _fast_init_body(
     model_context_statement = (
         f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
     )
+    model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
     model_config_statement = (
         f"\tmodel_config = getattr(self, {PYDANTIC_MINI_MODEL_CONFIG!r}, None)\n"
     )
@@ -249,6 +251,7 @@ def make_fast_init(
     code = "\n".join(statements)
 
     local_ns = {}
+    cbs["inspect"] = inspect
     cbs["process_validator_errors"] = process_validator_errors
 
     exec(code, cbs, local_ns)
