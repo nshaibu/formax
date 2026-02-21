@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import List
 
 
-from pydantic import PydanticBaseModel
+from pydantic import BaseModel as PydanticBaseModel
 
 from pydantic_mini import BaseModel, ValidationFlags
 
