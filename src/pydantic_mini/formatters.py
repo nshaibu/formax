@@ -23,17 +23,30 @@ D = typing.TypeVar(
 )
 
 
+_registry: dict[str, type["BaseModelFormatter"]] = {}
+
+
 class BaseModelFormatter(ABC):
     format_name: str = None
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls.format_name:
+            names = (
+                cls.format_name
+                if isinstance(cls.format_name, (list, tuple))
+                else [cls.format_name]
+            )
+            for name in names:
+                _registry[name] = cls
+
     @classmethod
-    def is_format_name(cls, format_name: str) -> bool:
-        format_names = (
-            isinstance(cls.format_name, (list, tuple))
-            and format_name
-            or [cls.format_name]
-        )
-        return format_name in format_names
+    def get_formatter(cls, format_name: str, **config: typing.Any) -> "BaseModelFormatter":
+        try:
+            formatter_cls = _registry[format_name]
+        except KeyError:
+            raise KeyError(f"Format {format_name} not found")
+        return formatter_cls(**config)
 
     @abstractmethod
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
@@ -43,18 +56,39 @@ class BaseModelFormatter(ABC):
     def decode(self, instance: "BaseModel") -> typing.Any:
         pass
 
-    @classmethod
-    def get_formatters(cls):
-        for subclass in cls.__subclasses__():
-            yield from subclass.get_formatters()
-            yield subclass
 
-    @classmethod
-    def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
-        for subclass in cls.get_formatters():
-            if subclass.is_format_name(format_name):
-                return subclass(**config)  # type: ignore
-        raise KeyError(f"Format {format_name} not found")
+# class BaseModelFormatter(ABC):
+#     format_name: str = None
+#
+#     @classmethod
+#     def is_format_name(cls, format_name: str) -> bool:
+#         format_names = (
+#             isinstance(cls.format_name, (list, tuple))
+#             and format_name
+#             or [cls.format_name]
+#         )
+#         return format_name in format_names
+#
+#     @abstractmethod
+#     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
+#         pass
+#
+#     @abstractmethod
+#     def decode(self, instance: "BaseModel") -> typing.Any:
+#         pass
+#
+#     @classmethod
+#     def get_formatters(cls):
+#         for subclass in cls.__subclasses__():
+#             yield from subclass.get_formatters()
+#             yield subclass
+#
+#     @classmethod
+#     def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
+#         for subclass in cls.get_formatters():
+#             if subclass.is_format_name(format_name):
+#                 return subclass(**config)  # type: ignore
+#         raise KeyError(f"Format {format_name} not found")
 
 
 class DictModelFormatter(BaseModelFormatter):

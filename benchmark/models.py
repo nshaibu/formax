@@ -2,8 +2,10 @@ import json
 from dataclasses import dataclass
 from typing import List
 
-
-from pydantic import BaseModel as PydanticBaseModel
+try:
+    from pydantic import BaseModel as PydanticBaseModel
+except ImportError:
+    PydanticBaseModel = object
 
 from pydantic_mini import BaseModel, ValidationFlags
 
