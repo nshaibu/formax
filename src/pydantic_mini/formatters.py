@@ -23,7 +23,7 @@ D = typing.TypeVar(
 )
 
 
-_registry: dict[str, type["BaseModelFormatter"]] = {}
+_registry: dict[str, typing.Type["BaseModelFormatter"]] = {}
 
 
 class BaseModelFormatter(ABC):
@@ -46,7 +46,7 @@ class BaseModelFormatter(ABC):
             formatter_cls = _registry[format_name]
         except KeyError:
             raise KeyError(f"Format {format_name} not found")
-        return formatter_cls(**config)
+        return formatter_cls(**config) # type: ignore
 
     @abstractmethod
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
@@ -57,51 +57,18 @@ class BaseModelFormatter(ABC):
         pass
 
 
-# class BaseModelFormatter(ABC):
-#     format_name: str = None
-#
-#     @classmethod
-#     def is_format_name(cls, format_name: str) -> bool:
-#         format_names = (
-#             isinstance(cls.format_name, (list, tuple))
-#             and format_name
-#             or [cls.format_name]
-#         )
-#         return format_name in format_names
-#
-#     @abstractmethod
-#     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
-#         pass
-#
-#     @abstractmethod
-#     def decode(self, instance: "BaseModel") -> typing.Any:
-#         pass
-#
-#     @classmethod
-#     def get_formatters(cls):
-#         for subclass in cls.__subclasses__():
-#             yield from subclass.get_formatters()
-#             yield subclass
-#
-#     @classmethod
-#     def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
-#         for subclass in cls.get_formatters():
-#             if subclass.is_format_name(format_name):
-#                 return subclass(**config)  # type: ignore
-#         raise KeyError(f"Format {format_name} not found")
-
-
 class DictModelFormatter(BaseModelFormatter):
     format_name = "dict"
 
+    @staticmethod
     def _encode(
-        self, _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
+        _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
     ) -> "BaseModel":
-        model_config = _type.get_pydantic_mini_config()
-        resolver = _ExpectedTypeResolver(
-            actual_types=(_type,), model_config=model_config
-        )
-        instance = resolver.coerce(obj)
+        # model_config = _type.get_pydantic_mini_config()
+        # resolver = _ExpectedTypeResolver(
+        #     actual_types=(_type,), model_config=model_config
+        # )
+        instance = _type.__pydantic_model_resolver__.coerce(obj)
         return instance
 
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:

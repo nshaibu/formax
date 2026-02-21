@@ -164,6 +164,8 @@ class SchemaMeta(type):
         if not parents:
             return super().__new__(cls, name, bases, attrs)
 
+        from .fields import _ExpectedTypeResolver
+
         new_attrs = cls.build_class_namespace(name, attrs)
 
         model_config_class: typing.Optional[typing.Type] = new_attrs.get("Config", None)
@@ -219,6 +221,11 @@ class SchemaMeta(type):
 
         matcher = _ClassSignatureMatcher(new_class)
         setattr(new_class, PYDANTIC_MINI_SIGNATURE_MATCHER, matcher)
+
+        new_class.__pydantic_model_resolver__ = _ExpectedTypeResolver(
+            actual_types=(new_class,),
+            model_config=config,
+        )
 
         return new_class
 
