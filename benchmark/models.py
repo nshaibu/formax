@@ -2,6 +2,9 @@ import json
 from dataclasses import dataclass
 from typing import List
 
+
+from pydantic import PydanticBaseModel
+
 from pydantic_mini import BaseModel, ValidationFlags
 
 
@@ -104,3 +107,24 @@ class FlatDisableTypeCheckProfileMini(BaseModel):
     class Config:
         # frozen = True
         validation = ValidationFlags.COERCE
+
+
+# ----------------------------
+# Pydantic v2
+# ----------------------------
+class ProfilePyd(PydanticBaseModel):
+    email: str
+    age: int
+
+
+class UserPyd(PydanticBaseModel):
+    id: int
+    name: str
+    scores: List[int]
+    active: bool
+
+
+class UserNestedPyd(PydanticBaseModel):
+    id: int
+    name: str
+    profile: ProfilePyd

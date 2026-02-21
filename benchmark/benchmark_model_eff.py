@@ -5,6 +5,8 @@ from .models import (
     UserNestedDC,
     UserNestedMini,
     ProfileDC,
+    UserPyd,
+    UserNestedPyd,
     DisableTypeCheckMini,
     DisableAllValidationMini,
     FlatDisableTypeCheckProfileMini,
@@ -52,3 +54,15 @@ def test_flat_disable_type_check_pydantic_mini(benchmark, data):
 
 def test_pydantic_mini_json(benchmark, json_data):
     benchmark(lambda: UserMini.loads(json_data, _format="json"))
+
+
+def test_flat_pydantic(benchmark, data):
+    benchmark(lambda: UserPyd(**data))
+
+
+def test_nested_pydantic(benchmark, nested_data):
+    benchmark(lambda: UserNestedPyd(**nested_data))
+
+
+def test_pydantic_json(benchmark, json_data):
+    benchmark(lambda: UserPyd.model_validate_json(json_data))
