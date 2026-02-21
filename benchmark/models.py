@@ -62,8 +62,8 @@ class UserNestedMini(BaseModel):
     name: str
     profile: ProfileMini
 
-    class Config:
-        frozen = True
+    # class Config:
+    #     frozen = True
 
 
 class DisableAllValidationMini(BaseModel):
@@ -91,7 +91,7 @@ class FlatDisableAllValidationProfileMini(BaseModel):
     active: bool
 
     class Config:
-        frozen = True
+        # frozen = True
         validation = ValidationFlags.NONE
 
 
@@ -102,5 +102,5 @@ class FlatDisableTypeCheckProfileMini(BaseModel):
     active: bool
 
     class Config:
-        frozen = True
+        # frozen = True
         validation = ValidationFlags.COERCE
