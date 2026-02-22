@@ -2,7 +2,7 @@ import typing
 import inspect
 from dataclasses import MISSING
 
-from .fields import MiniField
+from .fields import _MiniField
 from .utils import (
     make_private_field,
     PYDANTIC_MINI_MODEL_CONTEXT,
@@ -28,7 +28,7 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
     default_params = []
 
     for field_name in attrs.get("__annotations__", []):
-        mini_field: typing.Optional[MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
 
         if mini_field:
             default_value = mini_field.get_default()
@@ -51,9 +51,7 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
 def _post_init_call_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
     init_fields = attrs.get(PYDANTIC_INIT_VARS_FIELDS, [])
     args_str = join_string(init_fields)
-    lines = (
-        f"\tself.__post_init__({args_str[:-1]})",
-    )
+    lines = (f"\tself.__post_init__({args_str[:-1]})",)
     return "\n".join(lines)
 
 
@@ -67,7 +65,7 @@ def _disable_all_validation_init_body(
 
     for field_name in field_names:
         cb_statement = ""
-        mini_field: typing.Optional[MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
         if mini_field:
             if mini_field._preformat_callback:
                 cb_name = f"preformat_{field_name}"
@@ -80,7 +78,7 @@ def _disable_all_validation_init_body(
         else:
             continue
 
-    if '__post_init__' in attrs:
+    if "__post_init__" in attrs:
         body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
@@ -117,7 +115,7 @@ def _disable_type_check_init_body(
         cb_statement = ""
         validator_cbs_statement = ""
 
-        mini_field: typing.Optional[MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
 
         if mini_field:
             if mini_field._preformat_callback:
@@ -141,7 +139,7 @@ def _disable_type_check_init_body(
         )
         body.append(statement)
 
-    if '__post_init__' in attrs:
+    if "__post_init__" in attrs:
         body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)
@@ -188,7 +186,7 @@ def _fast_init_body(
     for field_name in field_names:
         mini_statement = ""
 
-        mini_field: typing.Optional[MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
 
         if mini_field:
             mini_field_name = f"mini_field_{field_name}"
@@ -196,9 +194,8 @@ def _fast_init_body(
 
             mini_statement = f"\tcoerced_{field_name}_value = {mini_field_name}.run_preformatters(self, {field_name})\n"
 
-            if mini_field.__class__.__name__ == "MiniField":
+            if mini_field.__class__.__name__ == "_MiniField":
                 # Resolve and set model context
-                # mini_statement += f"\tmodel_context_{field_name} = {mini_field_name}.get_model_context(self)\n"
                 mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
                 mini_statement += f"\tif {mini_field_name}.inner_type:\n"
                 mini_statement += f"\t\t{mini_field_name}.inner_type.module_context = model_context\n\n"
@@ -234,7 +231,7 @@ def _fast_init_body(
             )
         body.append(mini_statement)
 
-    if '__post_init__' in attrs:
+    if "__post_init__" in attrs:
         body.append(_post_init_call_codegen(attrs))
 
     code = "\n".join(body)

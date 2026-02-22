@@ -38,9 +38,9 @@ from .make_init import (
 from .exceptions import ValidationError, ValidationErrorCollector
 from .utils import process_validator_errors
 from .fields import (
-    MiniField,
+    _MiniField,
     _ClassSignatureMatcher,
-    DisableAllValidationMiniField,
+    _DisableAllValidationMiniField,
 )
 
 
@@ -212,7 +212,7 @@ class SchemaMeta(type):
         if config.should_typecheck():
             for field_name in new_attrs.get("__annotations__", {}):
                 mini_field = new_attrs.get(field_name, None)
-                if isinstance(mini_field, MiniField):
+                if isinstance(mini_field, _MiniField):
                     # Initialise type expectations with the fully realised class
                     mini_field._init_type_expectations(
                         new_class,
@@ -446,11 +446,11 @@ class SchemaMeta(type):
                     annotation = MiniAnnotated[object, Attrib()]
 
                 if disable_all_validation:
-                    attrs[field_name] = DisableAllValidationMiniField(
+                    attrs[field_name] = _DisableAllValidationMiniField(
                         field_name, annotation, config, value_field.init, value_field
                     )
                 else:
-                    mini_field = MiniField(
+                    mini_field = _MiniField(
                         field_name,
                         annotation,
                         config,
@@ -526,11 +526,11 @@ class SchemaMeta(type):
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
             if disable_all_validation:
-                mini_field = DisableAllValidationMiniField(
+                mini_field = _DisableAllValidationMiniField(
                     field_name, annotation, config, value_field.init, value_field
                 )
             else:
-                mini_field = MiniField(
+                mini_field = _MiniField(
                     field_name, annotation, config, value_field.init, value_field
                 )
 
@@ -557,7 +557,7 @@ class SchemaMeta(type):
 
     @staticmethod
     def preformat_hook(
-        mini_field: MiniField,
+        mini_field: _MiniField,
         field_name: str,
         preformat_list: typing.List[PreFormatType],
     ) -> None:
@@ -571,7 +571,7 @@ class SchemaMeta(type):
 
     @staticmethod
     def validator_hook(
-        mini_field: MiniField,
+        mini_field: _MiniField,
         attrib_query: Attrib,
         field_name: str,
         validator_list: typing.List[ValidatorType],

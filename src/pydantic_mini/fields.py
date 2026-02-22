@@ -1,7 +1,13 @@
 import typing
 import inspect
 from enum import Enum
-from dataclasses import fields as dc_fields, Field, MISSING, is_dataclass
+from dataclasses import (
+    fields as dc_fields,
+    Field as dc_Field,
+    MISSING,
+    is_dataclass,
+    field as dc_field,
+)
 from typing import ForwardRef
 from .typing import (
     is_mini_annotated,
@@ -9,7 +15,6 @@ from .typing import (
     get_origin,
     get_args,
     get_forward_type,
-    Annotated,
     Attrib,
     NoneType,
     is_collection,
@@ -97,6 +102,16 @@ _BUILTIN_TYPES = frozenset(
         NoneType,
     }
 )
+
+
+class Field:
+    __slots__ = ("name",)
+
+    def __init__(self):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        pass
 
 
 class _ExpectedType:
@@ -463,7 +478,7 @@ class _MiniFieldBase:
         mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = False,
-        dc_field_obj: typing.Optional[Field] = None,
+        dc_field_obj: typing.Optional[dc_Field] = None,
     ):
         if not is_mini_annotated(mini_annotated):
             raise ValidationError(
@@ -510,7 +525,7 @@ class _MiniFieldBase:
         return MISSING
 
     def processor_default_value(self, value: typing.Any) -> typing.Any:
-        if isinstance(value, MiniField):
+        if isinstance(value, _MiniFieldBase):
             value = value.get_default()
             if value is MISSING:
                 raise AttributeError(
@@ -586,7 +601,7 @@ class _MiniFieldBase:
         self._preformat_callback = func
 
 
-class DisableAllValidationMiniField(_MiniFieldBase):
+class _DisableAllValidationMiniField(_MiniFieldBase):
     __slots__ = ()
 
     # NOTED: Removed all type introspections and validators since all validations are disabled
@@ -596,7 +611,7 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = True,
-        dc_field_obj: typing.Optional[Field] = None,
+        dc_field_obj: typing.Optional[dc_Field] = None,
     ):
         self.init = init
         self.name = name
@@ -627,7 +642,7 @@ class DisableAllValidationMiniField(_MiniFieldBase):
         return value
 
 
-class MiniField(_MiniFieldBase):
+class _MiniField(_MiniFieldBase):
 
     __slots__ = (
         "expected_type",
@@ -644,7 +659,7 @@ class MiniField(_MiniFieldBase):
         mini_annotated: typing.Any,
         model_config: ModelConfigWrapper,
         init: bool = True,
-        dc_field_obj: typing.Optional[Field] = None,
+        dc_field_obj: typing.Optional[dc_Field] = None,
     ):
         super().__init__(name, mini_annotated, model_config, init, dc_field_obj)
 

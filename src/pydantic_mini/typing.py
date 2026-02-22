@@ -8,7 +8,7 @@ import inspect
 import warnings
 import collections
 from enum import IntFlag, Enum, auto
-from dataclasses import MISSING, InitVar
+from dataclasses import MISSING, InitVar, field
 
 if sys.version_info >= (3, 11):
     from typing import dataclass_transform
@@ -274,6 +274,12 @@ class ModelConfigWrapper:
 
 class Attrib:
     __slots__ = (
+        "init",
+        "repr",
+        "hash",
+        "compare",
+        "metadata",
+        "kw_only",
         "field_name",
         "default",
         "default_factory",
@@ -291,6 +297,12 @@ class Attrib:
 
     def __init__(
         self,
+        init: bool = True,
+        repr: bool = True,
+        hash: typing.Optional[bool] = None,
+        compare: bool = True,
+        metadata: typing.Any = None,
+        kw_only: typing.Any = MISSING,
         default: typing.Optional[typing.Any] = MISSING,
         default_factory: typing.Optional[typing.Callable[[], typing.Any]] = MISSING,
         pre_formatter: typing.Union[PreFormatType, MISSING] = MISSING,
@@ -329,6 +341,13 @@ class Attrib:
             pattern (str or Pattern, optional): Regex pattern constraint.
             validators (List[Callable], optional): Additional callables that validate the input.
         """
+        self.init: bool = init
+        self.repr: bool = repr
+        self.hash: typing.Optional[bool] = hash
+        self.compare: bool = compare
+        self.metadata: typing.Any = metadata
+        self.kw_only: bool = kw_only
+
         self.field_name: typing.Optional[str] = None
         self.default = default
         self.default_factory = default_factory
@@ -356,6 +375,20 @@ class Attrib:
             f"default_factory={self.default_factory!r},"
             ")"
         )
+
+    @property
+    def dc_field(self):
+        kwargs = {
+            "init": self.init,
+            "repr": self.repr,
+            "hash": self.hash,
+            "compare": self.compare,
+            "metadata": self.metadata,
+            "kw_only": self.kw_only,
+        }
+        if self.default_factory is not MISSING:
+            return field(default_factory=self.default_factory, **kwargs)
+        return field(default=self.default, **kwargs)
 
     @property
     def validators(self) -> typing.List[ValidatorType]:

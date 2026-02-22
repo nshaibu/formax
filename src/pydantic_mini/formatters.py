@@ -41,12 +41,14 @@ class BaseModelFormatter(ABC):
                 _registry[name] = cls
 
     @classmethod
-    def get_formatter(cls, format_name: str, **config: typing.Any) -> "BaseModelFormatter":
+    def get_formatter(
+        cls, format_name: str, **config: typing.Any
+    ) -> "BaseModelFormatter":
         try:
             formatter_cls = _registry[format_name]
         except KeyError:
             raise KeyError(f"Format {format_name} not found")
-        return formatter_cls(**config) # type: ignore
+        return formatter_cls(**config)  # type: ignore
 
     @abstractmethod
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
@@ -64,10 +66,6 @@ class DictModelFormatter(BaseModelFormatter):
     def _encode(
         _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
     ) -> "BaseModel":
-        # model_config = _type.get_pydantic_mini_config()
-        # resolver = _ExpectedTypeResolver(
-        #     actual_types=(_type,), model_config=model_config
-        # )
         instance = _type.__pydantic_model_resolver__.coerce(obj)
         return instance
 

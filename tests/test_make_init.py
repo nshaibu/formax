@@ -168,7 +168,7 @@ def test_fast_init_runs_full_pipeline():
     def validator(instance, v):
         calls.append(v)
 
-    setattr(DummyMiniField, "__name__", "MiniField")
+    setattr(DummyMiniField, "__name__", "_MiniField")
 
     attrs = {
         "__annotations__": {"x": int},
