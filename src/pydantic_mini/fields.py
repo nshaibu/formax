@@ -104,14 +104,89 @@ _BUILTIN_TYPES = frozenset(
 )
 
 
-class Field:
-    __slots__ = ("name",)
+def field_type_selection_factory(
+    field_name: str, annotation, dc_fd: dc_Field, config: "ModelConfigWrapper"
+) -> "_MiniFieldBase":
+    # let's determine the heuristics for field type selection
+    # if config.is_validated():
+    #     actual_type = annotation.__args__[0]
+    #     is_col, _ = is_collection(actual_type)
+    #     if actual_type and is_col:
+    #         return _CollectionFullValidationField(
+    #             field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+    #         )
+    #     return _FullValidationField(
+    #         field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+    #     )
+    if config.validation == ValidationFlags.NONE:
+        return _DisabledAllValidationField(
+            field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+        )
+    elif not config.should_typecheck():
+        return _DisableTypeCheckField(
+            field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+        )
+    else:
+        actual_type = annotation.__args__[0]
+        is_col, _ = is_collection(actual_type)
+        if actual_type and is_col:
+            return _CollectionFullValidationField(
+                field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+            )
+        return _FullValidationField(
+            field_name, annotation, config, init=dc_fd.init, dc_field_obj=dc_fd
+        )
 
-    def __init__(self):
-        pass
 
-    def __call__(self, *args, **kwargs):
-        pass
+def get_model_context(
+    instance: "BaseModel", cache_context: bool = True
+) -> typing.Optional[typing.Dict[str, typing.Any]]:
+    if instance is None:
+        return None
+    cls = instance.__class__
+    context = getattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, None)
+    if context:
+        return context
+
+    context = getattr(inspect.getmodule(cls), "__dict__", None)
+    if cache_context:
+        setattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, context)
+
+    return context
+
+
+def type_can_be_validated(
+    typ,
+    instance: typing.Optional["BaseModel"] = None,
+    resolve_forward_ref: bool = True,
+) -> typing.Optional[typing.Tuple]:
+    origin = get_origin(typ)
+    if origin is typing.Union:
+        type_args = get_args(typ)
+        if type_args:
+            _set = set()
+            for arg in type_args:
+                _arg_type = get_type(
+                    arg,
+                    globalns=get_model_context(
+                        instance, cache_context=resolve_forward_ref
+                    ),
+                    resolve_forward_ref=resolve_forward_ref,
+                )
+                if _arg_type is not None:
+                    _set.add(_arg_type)
+
+            return tuple(_set)
+    else:
+        return (
+            get_type(
+                typ,
+                globalns=get_model_context(instance, cache_context=resolve_forward_ref),
+                resolve_forward_ref=resolve_forward_ref,
+            ),
+        )
+
+    return None
 
 
 class _ExpectedType:
@@ -601,7 +676,7 @@ class _MiniFieldBase:
         self._preformat_callback = func
 
 
-class _DisableAllValidationMiniField(_MiniFieldBase):
+class _DisabledAllValidationField(_MiniFieldBase):
     __slots__ = ()
 
     # NOTED: Removed all type introspections and validators since all validations are disabled
@@ -642,7 +717,7 @@ class _DisableAllValidationMiniField(_MiniFieldBase):
         return value
 
 
-class _MiniField(_MiniFieldBase):
+class _TypedFieldBase(_MiniFieldBase):
 
     __slots__ = (
         "expected_type",
@@ -664,7 +739,7 @@ class _MiniField(_MiniFieldBase):
         super().__init__(name, mini_annotated, model_config, init, dc_field_obj)
 
         self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
-            self.type_can_be_validated(
+            type_can_be_validated(
                 self._actual_annotated_type, resolve_forward_ref=False
             )
         )
@@ -680,55 +755,55 @@ class _MiniField(_MiniFieldBase):
             self._actual_annotated_type
         )
 
-    def _init_type_expectations(
-        self,
-        instance: "BaseModel",
-        resolve_forward_ref: bool = True,
-    ):
-        if self.model_config.forward_refs_as_any:
-            resolve_forward_ref = False
+    # def _init_type_expectations(
+    #     self,
+    #     instance: "BaseModel",
+    #     resolve_forward_ref: bool = True,
+    # ):
+    #     if self.model_config.forward_refs_as_any:
+    #         resolve_forward_ref = False
+    #
+    #     self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
+    #         self.type_can_be_validated(
+    #             self._actual_annotated_type,
+    #             instance=instance,
+    #             resolve_forward_ref=resolve_forward_ref,
+    #         )
+    #     )
+    #
+    #     self.expected_type = _ExpectedTypeResolver(
+    #         actual_types=self.type_annotation_args,
+    #         model_config=self.model_config,
+    #     )
+    #
+    #     inner_types_list: typing.List[type] = []
+    #
+    #     for t in self._inner_type_args:
+    #         if t not in inner_types_list:
+    #             typ = get_type(
+    #                 t,
+    #                 globalns=self.get_model_context(
+    #                     instance, cache_context=resolve_forward_ref
+    #                 ),
+    #                 resolve_forward_ref=resolve_forward_ref,
+    #             )
+    #             if typ is not None:
+    #                 inner_types_list.append(typ)
+    #
+    #     try:
+    #         self.inner_type = _ExpectedTypeResolver(
+    #             actual_types=tuple(inner_types_list),  # type: ignore
+    #             model_config=self.model_config,
+    #         )
+    #     except TypeError:
+    #         self.inner_type = None
 
-        self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
-            self.type_can_be_validated(
-                self._actual_annotated_type,
-                instance=instance,
-                resolve_forward_ref=resolve_forward_ref,
-            )
-        )
-
-        self.expected_type = _ExpectedTypeResolver(
-            actual_types=self.type_annotation_args,
-            model_config=self.model_config,
-        )
-
-        inner_types_list: typing.List[type] = []
-
-        for t in self._inner_type_args:
-            if t not in inner_types_list:
-                typ = get_type(
-                    t,
-                    globalns=self.get_model_context(
-                        instance, cache_context=resolve_forward_ref
-                    ),
-                    resolve_forward_ref=resolve_forward_ref,
-                )
-                if typ is not None:
-                    inner_types_list.append(typ)
-
-        try:
-            self.inner_type = _ExpectedTypeResolver(
-                actual_types=tuple(inner_types_list),  # type: ignore
-                model_config=self.model_config,
-            )
-        except TypeError:
-            self.inner_type = None
-
-    def _finalise_type_resolver(self):
-        if self.expected_type:
-            self.expected_type.finalize()
-
-        if self.inner_type:
-            self.inner_type.finalize()
+    # def finalise_type_resolver(self):
+    #     if self.expected_type:
+    #         self.expected_type.finalize()
+    #
+    #     if self.inner_type:
+    #         self.inner_type.finalize()
 
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         value = self.processor_default_value(value)
@@ -767,22 +842,22 @@ class _MiniField(_MiniFieldBase):
         instance.__dict__[self.private_name] = value
         return None
 
-    @staticmethod
-    def get_model_context(
-        instance: "BaseModel", cache_context: bool = True
-    ) -> typing.Optional[typing.Dict[str, typing.Any]]:
-        if instance is None:
-            return None
-        cls = instance.__class__
-        context = getattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, None)
-        if context:
-            return context
-
-        context = getattr(inspect.getmodule(cls), "__dict__", None)
-        if cache_context:
-            setattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, context)
-
-        return context
+    # @staticmethod
+    # def get_model_context(
+    #     instance: "BaseModel", cache_context: bool = True
+    # ) -> typing.Optional[typing.Dict[str, typing.Any]]:
+    #     if instance is None:
+    #         return None
+    #     cls = instance.__class__
+    #     context = getattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, None)
+    #     if context:
+    #         return context
+    #
+    #     context = getattr(inspect.getmodule(cls), "__dict__", None)
+    #     if cache_context:
+    #         setattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, context)
+    #
+    #     return context
 
     def _value_coerce(self, value: typing.Any) -> typing.Any:
         if self.is_collection:
@@ -797,7 +872,7 @@ class _MiniField(_MiniFieldBase):
 
         return None
 
-    def _field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
+    def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if self.is_collection:
             if self.inner_type:
 
@@ -831,38 +906,222 @@ class _MiniField(_MiniFieldBase):
             if error:
                 raise error
 
-    def type_can_be_validated(
-        self,
-        typ,
-        instance: typing.Optional["BaseModel"] = None,
-        resolve_forward_ref: bool = True,
-    ) -> typing.Optional[typing.Tuple]:
-        origin = get_origin(typ)
-        if origin is typing.Union:
-            type_args = get_args(typ)
-            if type_args:
-                _set = set()
-                for arg in type_args:
-                    _arg_type = get_type(
-                        arg,
-                        globalns=self.get_model_context(
-                            instance, cache_context=resolve_forward_ref
-                        ),
-                        resolve_forward_ref=resolve_forward_ref,
-                    )
-                    if _arg_type is not None:
-                        _set.add(_arg_type)
+    # def type_can_be_validated(
+    #     self,
+    #     typ,
+    #     instance: typing.Optional["BaseModel"] = None,
+    #     resolve_forward_ref: bool = True,
+    # ) -> typing.Optional[typing.Tuple]:
+    #     origin = get_origin(typ)
+    #     if origin is typing.Union:
+    #         type_args = get_args(typ)
+    #         if type_args:
+    #             _set = set()
+    #             for arg in type_args:
+    #                 _arg_type = get_type(
+    #                     arg,
+    #                     globalns=get_model_context(
+    #                         instance, cache_context=resolve_forward_ref
+    #                     ),
+    #                     resolve_forward_ref=resolve_forward_ref,
+    #                 )
+    #                 if _arg_type is not None:
+    #                     _set.add(_arg_type)
+    #
+    #             return tuple(_set)
+    #     else:
+    #         return (
+    #             get_type(
+    #                 typ,
+    #                 globalns=get_model_context(
+    #                     instance, cache_context=resolve_forward_ref
+    #                 ),
+    #                 resolve_forward_ref=resolve_forward_ref,
+    #             ),
+    #         )
+    #
+    #     return None
 
-                return tuple(_set)
-        else:
-            return (
-                get_type(
-                    typ,
-                    globalns=self.get_model_context(
+
+class _DisableTypeCheckField(_TypedFieldBase):
+
+    def __set__(self, instance, value):
+        value = self.processor_default_value(value)
+        value = self.run_preformatters(instance, value)
+
+        self.run_validators(instance, value)
+
+        instance.__dict__[self.private_name] = value
+        return None
+
+
+class _FullValidationField(_TypedFieldBase):
+
+    def _init_type_expectations(
+        self,
+        instance: "BaseModel",
+        resolve_forward_ref: bool = True,
+    ):
+        if self.model_config.forward_refs_as_any:
+            resolve_forward_ref = False
+
+        self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
+            type_can_be_validated(
+                self._actual_annotated_type,
+                instance=instance,
+                resolve_forward_ref=resolve_forward_ref,
+            )
+        )
+
+        self.expected_type = _ExpectedTypeResolver(
+            actual_types=self.type_annotation_args,
+            model_config=self.model_config,
+        )
+
+    def finalise_type_resolver(self) -> None:
+        if self.expected_type:
+            self.expected_type.finalize()
+
+    def __set__(self, instance, value) -> None:
+        value = self.processor_default_value(value)
+        value = self.run_preformatters(instance, value)
+
+        model_context = get_model_context(instance)
+        self.expected_type.module_context = model_context
+
+        self.finalise_type_resolver()
+
+        try:
+            value = self.expected_type.coerce(value)
+        except Exception as e:
+            err = process_validator_errors(
+                instance,
+                field_name=self.name,
+                value=value,
+                error=e,
+                aggregate_errors=self.model_config.schema_mode,
+            )
+            if err:
+                raise err
+
+        self.field_type_validator(instance, value)
+        self.run_validators(instance, value)
+
+        instance.__dict__[self.private_name] = value
+        return None
+
+    def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
+        if not self.expected_type.validate(value):
+            error = TypeError(
+                f"Field '{self.name!r}' should be of type {self.expected_type.type_string()!r}, "
+                f"but got {type(value).__name__!r}."
+            )
+            error = process_validator_errors(
+                instance,
+                field_name=self.name,
+                value=value,
+                error=error,
+                aggregate_errors=self.model_config.schema_mode,
+            )
+            if error:
+                raise error
+
+
+class _CollectionFullValidationField(_TypedFieldBase):
+
+    def _init_type_expectations(
+        self,
+        instance: "BaseModel",
+        resolve_forward_ref: bool = True,
+    ):
+        if self.model_config.forward_refs_as_any:
+            resolve_forward_ref = False
+
+        self.type_annotation_args: typing.Optional[typing.Tuple[typing.Any]] = (
+            type_can_be_validated(
+                self._actual_annotated_type,
+                instance=instance,
+                resolve_forward_ref=resolve_forward_ref,
+            )
+        )
+
+        self.expected_type = _ExpectedTypeResolver(
+            actual_types=self.type_annotation_args,
+            model_config=self.model_config,
+        )
+
+        inner_types_list: typing.List[type] = []
+
+        for t in self._inner_type_args:
+            if t not in inner_types_list:
+                typ = get_type(
+                    t,
+                    globalns=get_model_context(
                         instance, cache_context=resolve_forward_ref
                     ),
                     resolve_forward_ref=resolve_forward_ref,
-                ),
-            )
+                )
+                if typ is not None:
+                    inner_types_list.append(typ)
 
+        try:
+            self.inner_type = _ExpectedTypeResolver(
+                actual_types=tuple(inner_types_list),  # type: ignore
+                model_config=self.model_config,
+            )
+        except TypeError:
+            self.inner_type = None
+
+    def finalise_type_resolver(self):
+        self.expected_type.finalize()
+        self.inner_type.finalize()
+
+    def __set__(self, instance, value) -> None:
+        value = self.processor_default_value(value)
+        value = self.run_preformatters(instance, value)
+
+        model_context = get_model_context(instance)
+        self.expected_type.module_context = model_context
+        self.inner_type.module_context = model_context
+
+        self.finalise_type_resolver()
+
+        try:
+            if self.type_annotation_args and isinstance(value, (dict, list)):
+                value = value if isinstance(value, list) else [value]
+                coerced_value = self.expected_type.coerce(
+                    [self.inner_type.coerce(val) for val in value]
+                )
+                value = coerced_value
+        except Exception as e:
+            err = process_validator_errors(
+                instance,
+                field_name=self.name,
+                value=value,
+                error=e,
+                aggregate_errors=self.model_config.schema_mode,
+            )
+            if err:
+                raise err
+
+        self.field_type_validator(instance, value)
+        self.run_validators(instance, value)
+
+        instance.__dict__[self.private_name] = value
         return None
+
+    def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
+        for val in value:
+            if not self.inner_type.validate(val):
+                error = TypeError(
+                    f"Expected a collection of values of type(s) {self.inner_type.type_string()!r}. Got value: {val!r} "
+                )
+                error = process_validator_errors(
+                    instance,
+                    field_name=self.name,
+                    value=val,
+                    error=error,
+                    aggregate_errors=self.model_config.schema_mode,
+                )
+                if error:
+                    raise error

@@ -38,9 +38,11 @@ from .make_init import (
 from .exceptions import ValidationError, ValidationErrorCollector
 from .utils import process_validator_errors
 from .fields import (
-    _MiniField,
+    # _MiniField,
+    _MiniFieldBase,
     _ClassSignatureMatcher,
-    _DisableAllValidationMiniField,
+    # _DisableAllValidationMiniField,
+    field_type_selection_factory,
 )
 
 
@@ -212,7 +214,7 @@ class SchemaMeta(type):
         if config.should_typecheck():
             for field_name in new_attrs.get("__annotations__", {}):
                 mini_field = new_attrs.get(field_name, None)
-                if isinstance(mini_field, _MiniField):
+                if isinstance(mini_field, _MiniFieldBase):
                     # Initialise type expectations with the fully realised class
                     mini_field._init_type_expectations(
                         new_class,
@@ -321,7 +323,7 @@ class SchemaMeta(type):
                 and field_name not in exclude
                 and not callable(value)
             ):
-                if isinstance(value, Field):
+                if isinstance(value, (Field, Attrib)):
                     typ = cls._figure_out_field_type_by_default_value(
                         field_name, value, attrs
                     )
@@ -347,7 +349,11 @@ class SchemaMeta(type):
             value = MISSING
             if field_name in attrs:
                 value = attrs[field_name]
-                value = value if isinstance(value, Field) else field(default=value)
+                value = (
+                    value
+                    if isinstance(value, (Field, Attrib))
+                    else field(default=value)
+                )
 
             field_tuple = (*field_tuple, value)
 
@@ -365,7 +371,7 @@ class SchemaMeta(type):
     def _figure_out_field_type_by_default_value(
         cls, field_name: str, value: Field, attrs: typing.Dict[str, typing.Any]
     ) -> typing.Any:
-        if isinstance(value, Field):
+        if isinstance(value, (Field, Attrib)):
             if value.default is not MISSING:
                 return type(value.default)
             elif value.default_factory is not MISSING:
@@ -445,19 +451,36 @@ class SchemaMeta(type):
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
 
-                if disable_all_validation:
-                    attrs[field_name] = _DisableAllValidationMiniField(
-                        field_name, annotation, config, value_field.init, value_field
-                    )
-                else:
-                    mini_field = _MiniField(
-                        field_name,
-                        annotation,
-                        config,
-                        value_field.init,
-                        value_field,
-                    )
-
+                # if disable_all_validation:
+                #     attrs[field_name] = _DisableAllValidationMiniField(
+                #         field_name, annotation, config, value_field.init, value_field
+                #     )
+                # else:
+                #     mini_field = _MiniField(
+                #         field_name,
+                #         annotation,
+                #         config,
+                #         value_field.init,
+                #         value_field,
+                #     )
+                #
+                #     cls.validator_hook(
+                #         mini_field,
+                #         Attrib(),
+                #         field_name,
+                #         validators.get(field_name, []),
+                #         config.schema_mode,
+                #     )
+                #
+                #     cls.preformat_hook(
+                #         mini_field, field_name, preformatters.get(field_name, [])
+                #     )
+                #
+                #     attrs[field_name] = mini_field
+                mini_field = field_type_selection_factory(
+                    field_name, annotation, value_field, config
+                )
+                if not disable_all_validation:
                     cls.validator_hook(
                         mini_field,
                         Attrib(),
@@ -469,8 +492,7 @@ class SchemaMeta(type):
                     cls.preformat_hook(
                         mini_field, field_name, preformatters.get(field_name, [])
                     )
-
-                    attrs[field_name] = mini_field
+                attrs[field_name] = mini_field
 
                 continue
 
@@ -480,7 +502,7 @@ class SchemaMeta(type):
                     forward_annotation = get_forward_type(annotation)
                     if forward_annotation is None:
                         raise TypeError(
-                            f"Field {field_name!r} must be annotated with a real type. {annotation} is not a type"
+                            f"Field {field_name!r} must be annotated with a real type. {annotation!r} is not a type"
                         )
 
                 annotation = MiniAnnotated[
@@ -525,15 +547,31 @@ class SchemaMeta(type):
 
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
-            if disable_all_validation:
-                mini_field = _DisableAllValidationMiniField(
-                    field_name, annotation, config, value_field.init, value_field
-                )
-            else:
-                mini_field = _MiniField(
-                    field_name, annotation, config, value_field.init, value_field
-                )
+            # if disable_all_validation:
+            #     mini_field = _DisableAllValidationMiniField(
+            #         field_name, annotation, config, value_field.init, value_field
+            #     )
+            # else:
+            #     mini_field = _MiniField(
+            #         field_name, annotation, config, value_field.init, value_field
+            #     )
+            #
+            #     cls.validator_hook(
+            #         mini_field,
+            #         attrib,
+            #         field_name,
+            #         validators.get(field_name, []),
+            #         config.schema_mode,
+            #     )
+            #
+            #     cls.preformat_hook(
+            #         mini_field, field_name, preformatters.get(field_name, [])
+            #     )
 
+            mini_field = field_type_selection_factory(
+                field_name, annotation, value_field, config
+            )
+            if not disable_all_validation:
                 cls.validator_hook(
                     mini_field,
                     attrib,
@@ -557,7 +595,7 @@ class SchemaMeta(type):
 
     @staticmethod
     def preformat_hook(
-        mini_field: _MiniField,
+        mini_field: _MiniFieldBase,
         field_name: str,
         preformat_list: typing.List[PreFormatType],
     ) -> None:
@@ -571,7 +609,7 @@ class SchemaMeta(type):
 
     @staticmethod
     def validator_hook(
-        mini_field: _MiniField,
+        mini_field: _MiniFieldBase,
         attrib_query: Attrib,
         field_name: str,
         validator_list: typing.List[ValidatorType],

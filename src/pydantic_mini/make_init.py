@@ -2,7 +2,7 @@ import typing
 import inspect
 from dataclasses import MISSING
 
-from .fields import _MiniField
+from .fields import _MiniFieldBase
 from .utils import (
     make_private_field,
     PYDANTIC_MINI_MODEL_CONTEXT,
@@ -28,7 +28,7 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
     default_params = []
 
     for field_name in attrs.get("__annotations__", []):
-        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
         if mini_field:
             default_value = mini_field.get_default()
@@ -65,7 +65,7 @@ def _disable_all_validation_init_body(
 
     for field_name in field_names:
         cb_statement = ""
-        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
         if mini_field:
             if mini_field._preformat_callback:
                 cb_name = f"preformat_{field_name}"
@@ -115,7 +115,7 @@ def _disable_type_check_init_body(
         cb_statement = ""
         validator_cbs_statement = ""
 
-        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
         if mini_field:
             if mini_field._preformat_callback:
@@ -186,7 +186,7 @@ def _fast_init_body(
     for field_name in field_names:
         mini_statement = ""
 
-        mini_field: typing.Optional[_MiniField] = attrs.get(field_name)
+        mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
         if mini_field:
             mini_field_name = f"mini_field_{field_name}"
