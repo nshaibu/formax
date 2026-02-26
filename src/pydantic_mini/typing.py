@@ -52,6 +52,7 @@ __all__ = (
     "dataclass_transform",
     "ValidatorType",
     "PreFormatType",
+    "PostFormatType",
     "ValidationFlags",
     "InitStrategy",
 )
@@ -62,6 +63,8 @@ logger = logging.getLogger(__name__)
 ValidatorType = typing.Callable[["BaseModel", typing.Any], typing.Union[bool, None]]
 
 PreFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
+
+PostFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
 
 
 # backward compatibility
@@ -284,6 +287,7 @@ class Attrib:
         "default",
         "default_factory",
         "pre_formatter",
+        "post_formatter",
         "help_text",
         "gt",
         "ge",
@@ -306,6 +310,7 @@ class Attrib:
         default: typing.Optional[typing.Any] = MISSING,
         default_factory: typing.Optional[typing.Callable[[], typing.Any]] = MISSING,
         pre_formatter: typing.Union[PreFormatType, MISSING] = MISSING,
+        post_formatter: typing.Union[PostFormatType, MISSING] = MISSING,
         help_text: typing.Optional[str] = None,
         gt: typing.Optional[float] = None,
         ge: typing.Optional[float] = None,
@@ -352,6 +357,7 @@ class Attrib:
         self.default = default
         self.default_factory = default_factory
         self.pre_formatter = pre_formatter
+        self.post_formatter = post_formatter
         self.help_text = help_text
         self.gt = gt
         self.ge = ge

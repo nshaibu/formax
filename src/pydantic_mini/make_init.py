@@ -10,6 +10,7 @@ from .utils import (
     process_validator_errors,
     PYDANTIC_MINI_MODEL_CONFIG,
 )
+from .fields import ModelConfigWrapper, ValidationFlags
 
 
 def join_string(
@@ -165,7 +166,9 @@ def make_disable_type_check_init(
 
 
 def _fast_init_body(
-    attrs: typing.Dict[str, typing.Any], frozen: bool = False
+    attrs: typing.Dict[str, typing.Any],
+    config: ModelConfigWrapper,
+    frozen: bool = False,
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
     mini_fields_dict = {}
@@ -192,42 +195,67 @@ def _fast_init_body(
             mini_field_name = f"mini_field_{field_name}"
             mini_fields_dict[mini_field_name] = mini_field
 
-            mini_statement = f"\tcoerced_{field_name}_value = {mini_field_name}.run_preformatters(self, {field_name})\n"
+            mini_statement = f"\tcoerced_{field_name} = {mini_field_name}.run_preformatters(self, {field_name})\n"
 
-            if mini_field.__class__.__name__ == "_MiniField":
+            if mini_field.to_representation() == "full_validation":
                 # Resolve and set model context
                 mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
-                mini_statement += f"\tif {mini_field_name}.inner_type:\n"
-                mini_statement += f"\t\t{mini_field_name}.inner_type.module_context = model_context\n\n"
+                # mini_statement += f"\t{mini_field_name}.inner_type.module_context = model_context\n\n"
 
                 # Initialised type resolver
-                mini_statement += f"\t{mini_field_name}._finalise_type_resolver()\n\n"
+                mini_statement += f"\t{mini_field_name}.finalise_type_resolver()\n\n"
 
                 # condition for coercing values
                 mini_statement += "\ttry:\n"
-                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}._value_coerce(coerced_{field_name}_value)\n"
-                mini_statement += f"\t\tif coerced_{field_name} is not None:\n"
-                mini_statement += (
-                    f"\t\t\tcoerced_{field_name}_value = coerced_{field_name}\n\n"
-                )
+                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}.coerce(coerced_{field_name})\n"
                 mini_statement += "\texcept Exception as err:\n"
-                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name}_value,error=err,aggregate_errors=model_config.schema_mode)\n"
+                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name},error=err,aggregate_errors=model_config.schema_mode)\n"
                 mini_statement += f"\t\tif err:\n"
                 mini_statement += f"\t\t\traise err\n"
 
                 # validate value
-                mini_statement += f"\t{mini_field_name}._field_type_validator(self, coerced_{field_name}_value)\n"
+                mini_statement += f"\t{mini_field_name}.field_type_validator(self, coerced_{field_name})\n"
+                mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
+            elif mini_field.to_representation() == "collection_full_validation":
+                # Resolve and set model context
+                mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
+                mini_statement += (
+                    f"\t{mini_field_name}.inner_type.module_context = model_context\n\n"
+                )
 
-                mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name}_value)\n\n"
+                # Initialised type resolver
+                mini_statement += f"\t{mini_field_name}.finalise_type_resolver()\n\n"
+
+                # condition for coercing values
+                mini_statement += "\ttry:\n"
+                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}.coerce(coerced_{field_name})\n"
+                mini_statement += "\texcept Exception as err:\n"
+                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name},error=err,aggregate_errors=model_config.schema_mode)\n"
+                mini_statement += f"\t\tif err:\n"
+                mini_statement += f"\t\t\traise err\n"
+
+                # validate value
+                mini_statement += f"\t{mini_field_name}.field_type_validator(self, coerced_{field_name})\n"
+                mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
+            elif mini_field.to_representation() == "disable_type_check":
+                mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
+            elif mini_field.to_representation() == "disable_all_validation":
+                # No further processing required
+                pass
+            else:
+                print(f"Unknown field")
+                continue
         else:
             continue
 
         private_name = make_private_field(field_name)
         if frozen:
-            mini_statement += f"\tobject.__setattr__(self, {private_name!r}, coerced_{field_name}_value)"
+            mini_statement += (
+                f"\tobject.__setattr__(self, {private_name!r}, coerced_{field_name})"
+            )
         else:
             mini_statement += (
-                f"\tself.__dict__[{private_name!r}]=coerced_{field_name}_value\n"
+                f"\tself.__dict__[{private_name!r}]=coerced_{field_name}\n"
             )
         body.append(mini_statement)
 
@@ -242,7 +270,7 @@ def _fast_init_body(
 def make_fast_init(
     attrs: typing.Dict[str, typing.Any],
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    body_code, cbs = _fast_init_body(attrs)
+    body_code, cbs = _fast_init_body(attrs, 3)
     statements = (_init_header(attrs), body_code)
 
     code = "\n".join(statements)
@@ -250,6 +278,7 @@ def make_fast_init(
     local_ns = {}
     cbs["inspect"] = inspect
     cbs["process_validator_errors"] = process_validator_errors
+    # import pdb; pdb.set_trace()
 
     exec(code, cbs, local_ns)
 

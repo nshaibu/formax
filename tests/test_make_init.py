@@ -40,6 +40,9 @@ class DummyMiniField:
     def get_default(self):
         return self._default
 
+    def to_representation(self):
+        return "full_validation"
+
     def run_preformatters(self, instance, value):
         if self._preformat_callback:
             return self._preformat_callback(instance, value)
@@ -52,13 +55,13 @@ class DummyMiniField:
     def get_model_context(self, instance):
         return {"model": instance}
 
-    def _finalise_type_resolver(self):
+    def finalise_type_resolver(self):
         pass
 
-    def _value_coerce(self, value):
+    def coerce(self, value):
         return None
 
-    def _field_type_validator(self, instance, value):
+    def field_type_validator(self, instance, value):
         pass
 
 
@@ -168,8 +171,6 @@ def test_fast_init_runs_full_pipeline():
     def validator(instance, v):
         calls.append(v)
 
-    setattr(DummyMiniField, "__name__", "_MiniField")
-
     attrs = {
         "__annotations__": {"x": int},
         "x": DummyMiniField(
@@ -186,6 +187,8 @@ def test_fast_init_runs_full_pipeline():
     Model.__init__ = init
 
     m = Model(3)
+
+    # import pdb;pdb.set_trace()
 
     assert calls == [6]
     assert m.__dict__[make_private_field("x")] == 6
