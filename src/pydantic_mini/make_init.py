@@ -178,7 +178,7 @@ def _fast_init_body(
     model_context_statement = (
         f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
     )
-    model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
+    # model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
     model_config_statement = (
         f"\tmodel_config = getattr(self, {PYDANTIC_MINI_MODEL_CONFIG!r}, None)\n"
     )
