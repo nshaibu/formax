@@ -860,8 +860,7 @@ class _FullValidationField(_TypedFieldBase):
         return self.forward_ref_type_name is not None
 
     def finalise_type_resolver(self) -> None:
-        if self.expected_type:
-            self.expected_type.finalize()
+        self.expected_type.finalize()
 
     def coerce(self, value: typing.Any) -> typing.Any:
         return self.expected_type.coerce(value)
@@ -874,31 +873,6 @@ class _FullValidationField(_TypedFieldBase):
             self.finalise_type_resolver()
         else:
             self.expected_type._finalised = True
-
-    # def __set__(self, instance, value) -> None:
-    #     value = self.processor_default_value(value)
-    #     value = self.run_preformatters(instance, value)
-    #
-    #     self._config_forward_ref(instance)
-    #
-    #     try:
-    #         value = self.coerce(value)
-    #     except Exception as e:
-    #         err = process_validator_errors(
-    #             instance,
-    #             field_name=self.name,
-    #             value=value,
-    #             error=e,
-    #             aggregate_errors=self.model_config.schema_mode,
-    #         )
-    #         if err:
-    #             raise err
-    #
-    #     self.field_type_validator(instance, value)
-    #     self.run_validators(instance, value)
-    #
-    #     instance.__dict__[self.private_name] = value
-    #     return None
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if not self.expected_type.validate(value):
@@ -991,31 +965,6 @@ class _CollectionFullValidationField(_TypedFieldBase):
         else:
             self.expected_type._finalised = True
             self.inner_type._finalised = True
-
-    # def __set__(self, instance, value) -> None:
-    #     value = self.processor_default_value(value)
-    #     value = self.run_preformatters(instance, value)
-    #
-    #     self._config_forward_ref(instance)
-    #
-    #     try:
-    #         value = self.coerce(value)
-    #     except Exception as e:
-    #         err = process_validator_errors(
-    #             instance,
-    #             field_name=self.name,
-    #             value=value,
-    #             error=e,
-    #             aggregate_errors=self.model_config.schema_mode,
-    #         )
-    #         if err:
-    #             raise err
-    #
-    #     self.field_type_validator(instance, value)
-    #     self.run_validators(instance, value)
-    #
-    #     instance.__dict__[self.private_name] = value
-    #     return None
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         for val in value:

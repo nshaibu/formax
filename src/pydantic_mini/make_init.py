@@ -198,12 +198,18 @@ def _fast_init_body(
             mini_statement = f"\tcoerced_{field_name} = {mini_field_name}.run_preformatters(self, {field_name})\n"
 
             if mini_field.to_representation() == "full_validation":
-                # Resolve and set model context
-                mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
-                # mini_statement += f"\t{mini_field_name}.inner_type.module_context = model_context\n\n"
+                if mini_field.has_forward_ref():
+                    # Resolve and set model context
+                    mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
 
-                # Initialised type resolver
-                mini_statement += f"\t{mini_field_name}.finalise_type_resolver()\n\n"
+                    # Initialised type resolver
+                    mini_statement += (
+                        f"\t{mini_field_name}.finalise_type_resolver()\n\n"
+                    )
+                else:
+                    mini_statement += (
+                        f"\t{mini_field_name}.expected_type._finalised = True\n"
+                    )
 
                 # condition for coercing values
                 mini_statement += "\ttry:\n"
@@ -217,14 +223,22 @@ def _fast_init_body(
                 mini_statement += f"\t{mini_field_name}.field_type_validator(self, coerced_{field_name})\n"
                 mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
             elif mini_field.to_representation() == "collection_full_validation":
-                # Resolve and set model context
-                mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
-                mini_statement += (
-                    f"\t{mini_field_name}.inner_type.module_context = model_context\n\n"
-                )
+                if mini_field.has_forward_ref():
+                    # Resolve and set model context
+                    mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
+                    mini_statement += f"\t{mini_field_name}.inner_type.module_context = model_context\n\n"
 
-                # Initialised type resolver
-                mini_statement += f"\t{mini_field_name}.finalise_type_resolver()\n\n"
+                    # Initialised type resolver
+                    mini_statement += (
+                        f"\t{mini_field_name}.finalise_type_resolver()\n\n"
+                    )
+                else:
+                    mini_statement += (
+                        f"\t{mini_field_name}.expected_type._finalised = True\n"
+                    )
+                    mini_statement += (
+                        f"\t{mini_field_name}.inner_type._finalised = True\n\n"
+                    )
 
                 # condition for coercing values
                 mini_statement += "\ttry:\n"

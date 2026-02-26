@@ -43,6 +43,9 @@ class DummyMiniField:
     def to_representation(self):
         return "full_validation"
 
+    def has_forward_ref(self):
+        return False
+
     def run_preformatters(self, instance, value):
         if self._preformat_callback:
             return self._preformat_callback(instance, value)
@@ -59,7 +62,7 @@ class DummyMiniField:
         pass
 
     def coerce(self, value):
-        return None
+        return value
 
     def field_type_validator(self, instance, value):
         pass
