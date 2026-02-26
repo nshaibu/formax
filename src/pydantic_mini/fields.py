@@ -680,7 +680,7 @@ class _MiniFieldBase:
         # Cache the default back to the instance
         instance.__dict__[self.private_name] = value
 
-        return value
+        return self.run_postformatters(instance, value)
 
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         raise NotImplementedError
@@ -691,38 +691,40 @@ class _MiniFieldBase:
     def set_preformat_callback(self, func: PreFormatType) -> None:
         self._preformat_callback = func
 
+    def set_postformat_callback(self, func: PostFormatType) -> None:
+        self._postformat_callback = func
+
 
 class _DisabledAllValidationField(_MiniFieldBase):
-    __slots__ = ()
 
     # NOTED: Removed all type introspections and validators since all validations are disabled
-    def __init__(
-        self,
-        name: str,
-        mini_annotated: typing.Any,
-        model_config: ModelConfigWrapper,
-        init: bool = True,
-        dc_field_obj: typing.Optional[dc_Field] = None,
-    ):
-        self.init = init
-        self.name = name
-        self.private_name = make_private_field(name)
-
-        self._query: Attrib = mini_annotated.__metadata__[0]
-
-        self._field_validator: typing.Optional[ValidatorType] = None
-        self._preformat_callback: typing.Optional[PreFormatType] = None
-
-        self._default = (
-            self._query.default
-            if self._query.default is MISSING
-            else dc_field_obj.default
-        )
-        self._default_factory = (
-            self._query.default_factory
-            if self._query.default_factory is MISSING
-            else dc_field_obj.default_factory
-        )
+    # def __init__(
+    #     self,
+    #     name: str,
+    #     mini_annotated: typing.Any,
+    #     model_config: ModelConfigWrapper,
+    #     init: bool = True,
+    #     dc_field_obj: typing.Optional[dc_Field] = None,
+    # ):
+    #     self.init = init
+    #     self.name = name
+    #     self.private_name = make_private_field(name)
+    #
+    #     self._query: Attrib = mini_annotated.__metadata__[0]
+    #
+    #     self._field_validator: typing.Optional[ValidatorType] = None
+    #     self._preformat_callback: typing.Optional[PreFormatType] = None
+    #
+    #     self._default = (
+    #         self._query.default
+    #         if self._query.default is MISSING
+    #         else dc_field_obj.default
+    #     )
+    #     self._default_factory = (
+    #         self._query.default_factory
+    #         if self._query.default_factory is MISSING
+    #         else dc_field_obj.default_factory
+    #     )
 
     def to_representation(self) -> str:
         return "disabled_all_validation"

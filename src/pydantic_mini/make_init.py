@@ -167,7 +167,6 @@ def make_disable_type_check_init(
 
 def _fast_init_body(
     attrs: typing.Dict[str, typing.Any],
-    config: ModelConfigWrapper,
     frozen: bool = False,
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
@@ -178,7 +177,7 @@ def _fast_init_body(
     model_context_statement = (
         f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
     )
-    # model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
+    model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
     model_config_statement = (
         f"\tmodel_config = getattr(self, {PYDANTIC_MINI_MODEL_CONFIG!r}, None)\n"
     )
@@ -187,7 +186,6 @@ def _fast_init_body(
     body.append(model_config_statement)
 
     for field_name in field_names:
-        mini_statement = ""
 
         mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
@@ -292,7 +290,6 @@ def make_fast_init(
     local_ns = {}
     cbs["inspect"] = inspect
     cbs["process_validator_errors"] = process_validator_errors
-    # import pdb; pdb.set_trace()
 
     exec(code, cbs, local_ns)
 

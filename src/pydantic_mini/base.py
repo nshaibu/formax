@@ -19,6 +19,7 @@ from .typing import (
     dataclass_transform,
     ValidatorType,
     PreFormatType,
+    PostFormatType,
     ValidationFlags,
     InitStrategy,
 )
@@ -103,7 +104,7 @@ def compile_callbacks(
     callbacks: typing.List[typing.Union[PreFormatType, ValidatorType]],
     name: str,
     field_name: str,
-    callback_type: typing.Literal["validate", "preformat"],
+    callback_type: typing.Literal["validate", "preformat", "postformat"],
     attrib_query: typing.Optional[Attrib] = None,
     aggregate_errors: bool = False,
 ) -> typing.Union[PreFormatType, ValidatorType]:
@@ -137,8 +138,9 @@ def compile_callbacks(
 
         lines.append("\treturn None")
     else:
+        decorator_key = "_preformat_order" if callback_type == "preformat" else "_postformat_order"
         _callbacks = sorted(
-            callbacks, key=lambda func: getattr(func, "_preformat_order", 0)
+            callbacks, key=lambda func: getattr(func, decorator_key, 0)
         )
 
         for i, cb in enumerate(_callbacks):
@@ -173,13 +175,14 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = new_attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        validators, preformatters = cls._collect_field_callbacks(
+        validators, preformatters, postformatters = cls. _collect_field_callbacks(
             new_attrs, bases, config
         )
 
         # Store them in the namespace for later access
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
+        new_attrs["__postformatters__"] = postformatters
         new_attrs[PYDANTIC_MINI_MODEL_CONTEXT] = None
         new_attrs[PYDANTIC_INIT_VARS_FIELDS] = cls._prepare_model_fields(
             new_attrs, validators, preformatters, config
@@ -259,16 +262,18 @@ class SchemaMeta(type):
     ) -> typing.Tuple[
         typing.Dict[str, typing.List[ValidatorType]],
         typing.Dict[str, typing.List[PreFormatType]],
+        typing.Dict[str, typing.List[PostFormatType]],
     ]:
         """
         Collect all validators and preformatters from the class namespace.
         This runs once during class creation - zero-runtime overhead.
 
         Returns:
-            Tuple of (validators_dict, preformatters_dict)
+            Tuple of (validators_dict, preformatters_dict, postformatters_dict)
         """
         validators: typing.Dict[str, typing.List[ValidatorType]] = {}
         preformatters: typing.Dict[str, typing.List[PreFormatType]] = {}
+        postformatters: typing.Dict[str, typing.List[PreFormatType]] = {}
 
         for attr_name, attr_value in attrs.items():
             if not callable(attr_value):
@@ -281,7 +286,7 @@ class SchemaMeta(type):
                 continue
 
             attr_value = typing.cast(
-                typing.Union[ValidatorType, PreFormatType], attr_value
+                typing.Union[ValidatorType, PreFormatType, PostFormatType], attr_value
             )
 
             if hasattr(attr_value, "_validator_fields"):
@@ -292,6 +297,10 @@ class SchemaMeta(type):
                 for field_name in attr_value._preformat_fields:  # type: ignore[attr-defined]
                     preformatters.setdefault(field_name, []).append(attr_value)
 
+            if hasattr(attr_value, "_postformat_fields"):
+                for field_name in attr_value._postformat_fields:  # type: ignore[attr-defined]
+                    postformatters.setdefault(field_name, []).append(attr_value)
+
         for base in bases:
             if hasattr(base, "__validators__"):
                 for field_name, field_validators in base.__validators__.items():
@@ -301,7 +310,11 @@ class SchemaMeta(type):
                 for field_name, field_preformatters in base.__preformatters__.items():
                     preformatters.setdefault(field_name, []).extend(field_preformatters)
 
-        return validators, preformatters
+            if hasattr(base, "__postformatters__"):
+                for field_name, field_postformatters in base.__postformatters__.items():
+                    postformatters.setdefault(field_name, []).extend(field_postformatters)
+
+        return validators, preformatters, postformatters
 
     @classmethod
     def get_non_annotated_fields(
@@ -451,32 +464,6 @@ class SchemaMeta(type):
                 else:
                     annotation = MiniAnnotated[object, Attrib()]
 
-                # if disable_all_validation:
-                #     attrs[field_name] = _DisableAllValidationMiniField(
-                #         field_name, annotation, config, value_field.init, value_field
-                #     )
-                # else:
-                #     mini_field = _MiniField(
-                #         field_name,
-                #         annotation,
-                #         config,
-                #         value_field.init,
-                #         value_field,
-                #     )
-                #
-                #     cls.validator_hook(
-                #         mini_field,
-                #         Attrib(),
-                #         field_name,
-                #         validators.get(field_name, []),
-                #         config.schema_mode,
-                #     )
-                #
-                #     cls.preformat_hook(
-                #         mini_field, field_name, preformatters.get(field_name, [])
-                #     )
-                #
-                #     attrs[field_name] = mini_field
                 mini_field = field_type_selection_factory(
                     field_name, annotation, value_field, config
                 )
@@ -547,27 +534,6 @@ class SchemaMeta(type):
 
             value_field = cls.coerce_value_to_dataclass_field(field_name, attrs, value)
 
-            # if disable_all_validation:
-            #     mini_field = _DisableAllValidationMiniField(
-            #         field_name, annotation, config, value_field.init, value_field
-            #     )
-            # else:
-            #     mini_field = _MiniField(
-            #         field_name, annotation, config, value_field.init, value_field
-            #     )
-            #
-            #     cls.validator_hook(
-            #         mini_field,
-            #         attrib,
-            #         field_name,
-            #         validators.get(field_name, []),
-            #         config.schema_mode,
-            #     )
-            #
-            #     cls.preformat_hook(
-            #         mini_field, field_name, preformatters.get(field_name, [])
-            #     )
-
             mini_field = field_type_selection_factory(
                 field_name, annotation, value_field, config
             )
@@ -606,6 +572,20 @@ class SchemaMeta(type):
             preformat_list, "field", field_name, "preformat"
         )
         mini_field.set_preformat_callback(compiled_preformat_callback)
+
+    @staticmethod
+    def postformat_hook(
+            mini_field: _MiniFieldBase,
+            field_name: str,
+            preformat_list: typing.List[PreFormatType],
+    ) -> None:
+        if not preformat_list:
+            return
+
+        compiled_postformat_callback: PreFormatType = compile_callbacks(
+            preformat_list, "field", field_name, "postformat"
+        )
+        mini_field.set_postformat_callback(compiled_postformat_callback)
 
     @staticmethod
     def validator_hook(
@@ -657,6 +637,7 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
     # These are populated by the metaclass
     __validators__: typing.Dict[str, typing.List[ValidatorType]]
     __preformatters__: typing.Dict[str, typing.List[PreFormatType]]
+    __postformatters__: typing.Dict[str, typing.List[PostFormatType]]
 
     __pydantic_mini_model_context__ = None
 
