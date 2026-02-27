@@ -521,6 +521,7 @@ class _ExpectedTypeResolver:
 
 
 class _MiniFieldBase:
+    kind = "base"
 
     __slots__ = (
         "init",
@@ -590,10 +591,10 @@ class _MiniFieldBase:
             "has_forward_ref method not implemented for this field type"
         )
 
-    def to_representation(self) -> str:
-        raise NotImplementedError(
-            "to_representation method not implemented for this field type"
-        )
+    # def to_representation(self) -> str:
+    #     raise NotImplementedError(
+    #         "to_representation method not implemented for this field type"
+    #     )
 
     def get_default(self) -> typing.Any:
         if self._default is not MISSING:
@@ -697,9 +698,7 @@ class _MiniFieldBase:
 
 class _DisabledAllValidationField(_MiniFieldBase):
     __slots__ = ()
-
-    def to_representation(self) -> str:
-        return "disabled_all_validation"
+    kind = "no_validations"
 
     def has_forward_ref(self) -> bool:
         return False
@@ -792,9 +791,7 @@ class _TypedFieldBase(_MiniFieldBase):
 
 
 class _DisableTypeCheckField(_TypedFieldBase):
-
-    def to_representation(self) -> str:
-        return "disable_type_check"
+    kind = "no_type_check"
 
     def has_forward_ref(self) -> bool:
         return False
@@ -810,6 +807,7 @@ class _DisableTypeCheckField(_TypedFieldBase):
 
 
 class _FullValidationField(_TypedFieldBase):
+    kind = "scalar_full"
 
     def _init_type_expectations(
         self,
@@ -831,9 +829,6 @@ class _FullValidationField(_TypedFieldBase):
             actual_types=self.type_annotation_args,
             model_config=self.model_config,
         )
-
-    def to_representation(self) -> str:
-        return "full_validation"
 
     def has_forward_ref(self) -> bool:
         return self.forward_ref_type_name is not None
@@ -873,6 +868,7 @@ class _FullValidationField(_TypedFieldBase):
 
 
 class _CollectionFullValidationField(_TypedFieldBase):
+    kind = "collection_full"
 
     def _init_type_expectations(
         self,
@@ -916,9 +912,6 @@ class _CollectionFullValidationField(_TypedFieldBase):
             )
         except TypeError:
             self.inner_type = None
-
-    def to_representation(self) -> str:
-        return "collection_full_validation"
 
     def has_forward_ref(self) -> bool:
         return self.forward_ref_type_name is not None

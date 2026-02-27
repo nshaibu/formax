@@ -22,6 +22,7 @@ from .typing import (
     PostFormatType,
     ValidationFlags,
     InitStrategy,
+    is_collection,
 )
 from .utils import (
     make_private_field,
@@ -42,6 +43,11 @@ from .fields import (
     _MiniFieldBase,
     _ClassSignatureMatcher,
     field_type_selection_factory,
+)
+from .optimised_funcs import (
+    scalar_full_no_config_ref,
+    full_setter_no_coercion,
+    collection_full_no_config_ref,
 )
 
 
@@ -69,11 +75,28 @@ def _generate_fast_init(
 ) -> typing.Callable[[typing.Any], typing.Any]:
     if config.validation & ValidationFlags.VALIDATED:
         if config.validation & ValidationFlags.TYPECHECK:
-            return make_fast_init(attrs)
+            return make_fast_init(attrs, config)
         else:
             return make_disable_type_check_init(attrs)
 
     return make_disable_all_validation_init(attrs)
+
+
+def _configure_mini_field(
+    mini_field: _MiniFieldBase,
+    config: ModelConfigWrapper,
+) -> None:
+    if mini_field.kind in ["scalar_full", "collection_full"]:
+        if not mini_field.has_forward_ref():
+            handler = (
+                scalar_full_no_config_ref
+                if mini_field.kind == "scalar_full"
+                else collection_full_no_config_ref
+            )
+            setattr(mini_field, "_config_forward_ref", handler)
+
+        if not config.should_coerce():
+            setattr(mini_field, "__set__", full_setter_no_coercion)
 
 
 def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
@@ -221,6 +244,16 @@ class SchemaMeta(type):
                         new_class,
                         resolve_forward_ref=False,
                     )
+
+                    # if not mini_field.has_forward_ref():
+                    #     if isinstance(mini_field, _FullValidationField):
+                    #         setattr(mini_field, "_config_forward_ref", scalar_full_config_ref)
+                    #     elif isinstance(mini_field, _CollectionFullValidationField):
+                    #         setattr(mini_field, "_config_forward_ref", non_forward_ref_config_method_for_collection_full_validation)
+                    #
+                    # if isinstance(mini_field, (_FullValidationField, _CollectionFullValidationField)):
+                    #     if not config.should_coerce():
+                    #         setattr(mini_field, "__set__", full_validation_without_coercion)
 
         matcher = _ClassSignatureMatcher(new_class)
         setattr(new_class, PYDANTIC_MINI_SIGNATURE_MATCHER, matcher)
@@ -467,6 +500,8 @@ class SchemaMeta(type):
                 mini_field = field_type_selection_factory(
                     field_name, annotation, value_field, config
                 )
+                _configure_mini_field(mini_field, config)
+
                 if not disable_all_validation:
                     cls.validator_hook(
                         mini_field,
@@ -537,6 +572,8 @@ class SchemaMeta(type):
             mini_field = field_type_selection_factory(
                 field_name, annotation, value_field, config
             )
+            _configure_mini_field(mini_field, config)
+
             if not disable_all_validation:
                 cls.validator_hook(
                     mini_field,

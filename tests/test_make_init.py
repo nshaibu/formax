@@ -9,6 +9,7 @@ from formax.make_init import (
     make_disable_type_check_init,
     make_fast_init,
 )
+from formax.typing import ModelConfigWrapper
 from formax.utils import make_private_field
 
 
@@ -21,6 +22,8 @@ class DummyQuery:
 
 
 class DummyMiniField:
+    kind = "scalar_full"
+
     def __init__(
         self,
         default=MISSING,
@@ -39,9 +42,6 @@ class DummyMiniField:
 
     def get_default(self):
         return self._default
-
-    def to_representation(self):
-        return "full_validation"
 
     def has_forward_ref(self):
         return False
@@ -153,7 +153,7 @@ def test_fast_init_assigns_private_fields():
         "x": DummyMiniField(),
     }
 
-    init = make_fast_init(attrs)
+    init = make_fast_init(attrs, ModelConfigWrapper())
 
     class Model:
         pass
@@ -182,7 +182,7 @@ def test_fast_init_runs_full_pipeline():
         ),
     }
 
-    init = make_fast_init(attrs)
+    init = make_fast_init(attrs, ModelConfigWrapper())
 
     class Model:
         pass

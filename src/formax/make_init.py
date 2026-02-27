@@ -165,9 +165,28 @@ def make_disable_type_check_init(
     return local_ns["__init__"]
 
 
+def value_coercion_code(
+    config: ModelConfigWrapper, mini_field_name: str, field_name: str
+) -> str:
+    statement = ""
+    if config.should_coerce():
+        # condition for coercing values
+        statement += "\ttry:\n"
+        statement += f"\t\tcoerced_{field_name} = {mini_field_name}.coerce(coerced_{field_name})\n"
+        statement += "\texcept Exception as err:\n"
+        if config.schema_mode:
+            statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name},error=err,aggregate_errors=model_config.schema_mode)\n"
+            statement += f"\t\tif err:\n"
+            statement += f"\t\t\traise err\n"
+        else:
+            statement += f"\t\traise err\n"
+
+    return statement
+
+
 def _fast_init_body(
     attrs: typing.Dict[str, typing.Any],
-    frozen: bool = False,
+    config: ModelConfigWrapper,
 ) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     body = []
     mini_fields_dict = {}
@@ -195,7 +214,7 @@ def _fast_init_body(
 
             mini_statement = f"\tcoerced_{field_name} = {mini_field_name}.run_preformatters(self, {field_name})\n"
 
-            if mini_field.to_representation() == "full_validation":
+            if mini_field.kind == "scalar_full":
                 if mini_field.has_forward_ref():
                     # Resolve and set model context
                     mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
@@ -209,18 +228,14 @@ def _fast_init_body(
                         f"\t{mini_field_name}.expected_type._finalised = True\n"
                     )
 
-                # condition for coercing values
-                mini_statement += "\ttry:\n"
-                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}.coerce(coerced_{field_name})\n"
-                mini_statement += "\texcept Exception as err:\n"
-                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name},error=err,aggregate_errors=model_config.schema_mode)\n"
-                mini_statement += f"\t\tif err:\n"
-                mini_statement += f"\t\t\traise err\n"
+                mini_statement += value_coercion_code(
+                    config, mini_field_name, field_name
+                )
 
                 # validate value
                 mini_statement += f"\t{mini_field_name}.field_type_validator(self, coerced_{field_name})\n"
                 mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
-            elif mini_field.to_representation() == "collection_full_validation":
+            elif mini_field.kind == "collection_full":
                 if mini_field.has_forward_ref():
                     # Resolve and set model context
                     mini_statement += f"\t{mini_field_name}.expected_type.module_context = model_context\n"
@@ -238,20 +253,16 @@ def _fast_init_body(
                         f"\t{mini_field_name}.inner_type._finalised = True\n\n"
                     )
 
-                # condition for coercing values
-                mini_statement += "\ttry:\n"
-                mini_statement += f"\t\tcoerced_{field_name} = {mini_field_name}.coerce(coerced_{field_name})\n"
-                mini_statement += "\texcept Exception as err:\n"
-                mini_statement += f"\t\terr = process_validator_errors(self,field_name={field_name!r},value=coerced_{field_name},error=err,aggregate_errors=model_config.schema_mode)\n"
-                mini_statement += f"\t\tif err:\n"
-                mini_statement += f"\t\t\traise err\n"
+                mini_statement += value_coercion_code(
+                    config, mini_field_name, field_name
+                )
 
                 # validate value
                 mini_statement += f"\t{mini_field_name}.field_type_validator(self, coerced_{field_name})\n"
                 mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
-            elif mini_field.to_representation() == "disable_type_check":
+            elif mini_field.kind == "no_type_check":
                 mini_statement += f"\t{mini_field_name}.run_validators(self, coerced_{field_name})\n\n"
-            elif mini_field.to_representation() == "disable_all_validation":
+            elif mini_field.kind == "no_validation":
                 # No further processing required
                 pass
             else:
@@ -261,7 +272,7 @@ def _fast_init_body(
             continue
 
         private_name = make_private_field(field_name)
-        if frozen:
+        if config.frozen:
             mini_statement += (
                 f"\tobject.__setattr__(self, {private_name!r}, coerced_{field_name})"
             )
@@ -281,8 +292,9 @@ def _fast_init_body(
 
 def make_fast_init(
     attrs: typing.Dict[str, typing.Any],
+    config: ModelConfigWrapper,
 ) -> typing.Callable[[typing.Any], typing.Any]:
-    body_code, cbs = _fast_init_body(attrs, 3)
+    body_code, cbs = _fast_init_body(attrs, config)
     statements = (_init_header(attrs), body_code)
 
     code = "\n".join(statements)
