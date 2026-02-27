@@ -94,12 +94,6 @@ _DATACLASS_CONFIG_FIELD: typing.List[str] = [
     "frozen",
 ]
 
-_NON_DATACLASS_CONFIG_FIELD: typing.List[str] = [
-    "strict_mode",
-    "disable_typecheck",
-    "disable_all_validation",
-]
-
 _resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
 
 

@@ -457,6 +457,9 @@ class _ExpectedTypeResolver:
 
     def coerce(self, value: typing.Any) -> typing.Any:
         """Convert value to one of the expected types"""
+        if value is None or not self.model_config.should_coerce():
+            return value
+
         matching_type = self.get_matching_type(value)
 
         if matching_type is None:
