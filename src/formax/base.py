@@ -87,6 +87,7 @@ def _configure_mini_field(
     config: ModelConfigWrapper,
 ) -> None:
     if mini_field.kind in ["scalar_full", "collection_full"]:
+        import pdb;pdb.set_trace()
         if not mini_field.has_forward_ref():
             handler = (
                 scalar_full_no_config_ref
@@ -490,7 +491,7 @@ class SchemaMeta(type):
                 mini_field = field_type_selection_factory(
                     field_name, annotation, value_field, config
                 )
-                _configure_mini_field(mini_field, config)
+                # _configure_mini_field(mini_field, config)
 
                 if not disable_all_validation:
                     cls.validator_hook(
@@ -562,7 +563,7 @@ class SchemaMeta(type):
             mini_field = field_type_selection_factory(
                 field_name, annotation, value_field, config
             )
-            _configure_mini_field(mini_field, config)
+            # _configure_mini_field(mini_field, config)
 
             if not disable_all_validation:
                 cls.validator_hook(
