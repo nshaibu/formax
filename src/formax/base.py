@@ -245,16 +245,6 @@ class SchemaMeta(type):
                         resolve_forward_ref=False,
                     )
 
-                    # if not mini_field.has_forward_ref():
-                    #     if isinstance(mini_field, _FullValidationField):
-                    #         setattr(mini_field, "_config_forward_ref", scalar_full_config_ref)
-                    #     elif isinstance(mini_field, _CollectionFullValidationField):
-                    #         setattr(mini_field, "_config_forward_ref", non_forward_ref_config_method_for_collection_full_validation)
-                    #
-                    # if isinstance(mini_field, (_FullValidationField, _CollectionFullValidationField)):
-                    #     if not config.should_coerce():
-                    #         setattr(mini_field, "__set__", full_validation_without_coercion)
-
         matcher = _ClassSignatureMatcher(new_class)
         setattr(new_class, PYDANTIC_MINI_SIGNATURE_MATCHER, matcher)
 

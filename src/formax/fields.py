@@ -837,8 +837,6 @@ class _FullValidationField(_TypedFieldBase):
         self.expected_type.finalize()
 
     def coerce(self, value: typing.Any) -> typing.Any:
-        if value is None or not self.model_config.should_coerce():
-            return value
         return self.expected_type.coerce(value)
 
     def _config_forward_ref(self, instance: "BaseModel"):
@@ -921,8 +919,6 @@ class _CollectionFullValidationField(_TypedFieldBase):
         self.inner_type.finalize()
 
     def coerce(self, value: typing.Any) -> typing.Any:
-        if value is None or not self.model_config.should_coerce():
-            return value
         if self.type_annotation_args and isinstance(value, (dict, list)):
             value = value if isinstance(value, list) else [value]
             coerced_value = self.expected_type.coerce(
