@@ -840,13 +840,9 @@ class _FullValidationField(_TypedFieldBase):
         return self.expected_type.coerce(value)
 
     def _config_forward_ref(self, instance: "BaseModel"):
-        if self.has_forward_ref():
-            model_context = get_model_context(instance)
-            self.expected_type.module_context = model_context
-
-            self.finalise_type_resolver()
-        else:
-            self.expected_type._finalised = True
+        model_context = get_model_context(instance)
+        self.expected_type.module_context = model_context
+        self.finalise_type_resolver()
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if not self.expected_type.validate(value):
@@ -928,15 +924,10 @@ class _CollectionFullValidationField(_TypedFieldBase):
         return value
 
     def _config_forward_ref(self, instance: "BaseModel"):
-        if self.has_forward_ref():
-            model_context = get_model_context(instance)
-            self.expected_type.module_context = model_context
-            self.inner_type.module_context = model_context
-
-            self.finalise_type_resolver()
-        else:
-            self.expected_type._finalised = True
-            self.inner_type._finalised = True
+        model_context = get_model_context(instance)
+        self.expected_type.module_context = model_context
+        self.inner_type.module_context = model_context
+        self.finalise_type_resolver()
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         for val in value:
