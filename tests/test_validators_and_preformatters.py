@@ -1,7 +1,6 @@
 import pytest
 import typing
-from pydantic_mini import BaseModel, validator, preformat
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, validator, preformat, ValidationError
 
 
 def test_single_field_validator():

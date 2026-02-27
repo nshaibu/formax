@@ -19,12 +19,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ===========================================================================================
 """
 
-__version__ = "1.2.0"
+__version__ = "0.10.0"
 
 from .base import BaseModel
 from .typing import Attrib, MiniAnnotated, ValidationFlags, InitStrategy
 from .exceptions import ValidationError
-from .decorators import validator, preformat
+from .decorators import validator, preformat, postformat
 
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "ValidationError",
     "validator",
     "preformat",
+    "postformat",
     "ValidationFlags",
     "InitStrategy",
 ]

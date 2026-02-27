@@ -4,7 +4,7 @@ import sys
 from typing import List, Optional, Union, Any, ClassVar, ForwardRef
 from dataclasses import InitVar, dataclass
 
-from pydantic_mini.typing import (
+from formax.typing import (
     is_mini_annotated,
     is_type,
     is_initvar_type,

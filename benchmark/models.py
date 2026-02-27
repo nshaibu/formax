@@ -7,7 +7,7 @@ try:
 except ImportError:
     PydanticBaseModel = object
 
-from pydantic_mini import BaseModel, ValidationFlags
+from formax import BaseModel, ValidationFlags
 
 
 DATA = {

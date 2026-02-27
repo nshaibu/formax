@@ -2,7 +2,7 @@ import unittest
 import typing
 from unittest.mock import patch
 from dataclasses import field, InitVar
-from pydantic_mini import (
+from formax import (
     BaseModel,
     MiniAnnotated,
     Attrib,
@@ -10,8 +10,8 @@ from pydantic_mini import (
     validator,
     ValidationFlags,
     InitStrategy,
+    ValidationError,
 )
-from pydantic_mini.exceptions import ValidationError
 
 
 class TestBase(unittest.TestCase):

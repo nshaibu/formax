@@ -39,10 +39,8 @@ from .make_init import (
 from .exceptions import ValidationError, ValidationErrorCollector
 from .utils import process_validator_errors
 from .fields import (
-    # _MiniField,
     _MiniFieldBase,
     _ClassSignatureMatcher,
-    # _DisableAllValidationMiniField,
     field_type_selection_factory,
 )
 
@@ -138,10 +136,10 @@ def compile_callbacks(
 
         lines.append("\treturn None")
     else:
-        decorator_key = "_preformat_order" if callback_type == "preformat" else "_postformat_order"
-        _callbacks = sorted(
-            callbacks, key=lambda func: getattr(func, decorator_key, 0)
+        decorator_key = (
+            "_preformat_order" if callback_type == "preformat" else "_postformat_order"
         )
+        _callbacks = sorted(callbacks, key=lambda func: getattr(func, decorator_key, 0))
 
         for i, cb in enumerate(_callbacks):
             lines.append(f"\tvalue = _cb{i}(instance, value)")
@@ -175,7 +173,7 @@ class SchemaMeta(type):
         model_config_class: typing.Optional[typing.Type] = new_attrs.get("Config", None)
         config = ModelConfigWrapper(model_config_class)
 
-        validators, preformatters, postformatters = cls. _collect_field_callbacks(
+        validators, preformatters, postformatters = cls._collect_field_callbacks(
             new_attrs, bases, config
         )
 
@@ -312,7 +310,9 @@ class SchemaMeta(type):
 
             if hasattr(base, "__postformatters__"):
                 for field_name, field_postformatters in base.__postformatters__.items():
-                    postformatters.setdefault(field_name, []).extend(field_postformatters)
+                    postformatters.setdefault(field_name, []).extend(
+                        field_postformatters
+                    )
 
         return validators, preformatters, postformatters
 
@@ -575,15 +575,15 @@ class SchemaMeta(type):
 
     @staticmethod
     def postformat_hook(
-            mini_field: _MiniFieldBase,
-            field_name: str,
-            preformat_list: typing.List[PreFormatType],
+        mini_field: _MiniFieldBase,
+        field_name: str,
+        postformat_list: typing.List[PreFormatType],
     ) -> None:
-        if not preformat_list:
+        if not postformat_list:
             return
 
         compiled_postformat_callback: PreFormatType = compile_callbacks(
-            preformat_list, "field", field_name, "postformat"
+            postformat_list, "field", field_name, "postformat"
         )
         mini_field.set_postformat_callback(compiled_postformat_callback)
 

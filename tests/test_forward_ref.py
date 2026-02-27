@@ -1,6 +1,6 @@
 import pytest
 from typing import Optional, List
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from formax import BaseModel, MiniAnnotated, Attrib
 
 
 class TaskNode(BaseModel):

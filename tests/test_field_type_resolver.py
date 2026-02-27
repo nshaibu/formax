@@ -2,8 +2,8 @@ import pytest
 import dataclasses
 from enum import Enum
 
-from pydantic_mini.typing import ModelConfigWrapper, ValidationFlags
-from pydantic_mini.fields import _ExpectedType, _ExpectedTypeResolver
+from formax.typing import ModelConfigWrapper, ValidationFlags
+from formax.fields import _ExpectedType, _ExpectedTypeResolver
 
 
 MISSING = dataclasses.MISSING

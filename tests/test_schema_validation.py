@@ -1,8 +1,10 @@
 import pytest
 import time
 import json
-from pydantic_mini import (
+from formax import (
     BaseModel,
+    Attrib,
+    MiniAnnotated,
     validator,
     preformat,
     ValidationError,
@@ -388,8 +390,6 @@ def test_fail_fast_vs_aggregate_errors():
 
 def test_aggregate_errors_with_attrib_validators():
     """Test error aggregation with built-in Attrib validators."""
-
-    from pydantic_mini import MiniAnnotated, Attrib
 
     class Product(BaseModel):
         name: MiniAnnotated[str, Attrib(min_length=3, max_length=50)]

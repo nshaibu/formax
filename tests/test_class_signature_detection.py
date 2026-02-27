@@ -4,7 +4,7 @@ import pytest
 from dataclasses import dataclass, field
 from enum import Enum
 
-from pydantic_mini.fields import _ClassSignatureMatcher
+from formax.fields import _ClassSignatureMatcher
 
 
 @pytest.mark.parametrize("cls", [int, str, float, list, dict])

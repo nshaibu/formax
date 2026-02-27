@@ -696,35 +696,7 @@ class _MiniFieldBase:
 
 
 class _DisabledAllValidationField(_MiniFieldBase):
-
-    # NOTED: Removed all type introspections and validators since all validations are disabled
-    # def __init__(
-    #     self,
-    #     name: str,
-    #     mini_annotated: typing.Any,
-    #     model_config: ModelConfigWrapper,
-    #     init: bool = True,
-    #     dc_field_obj: typing.Optional[dc_Field] = None,
-    # ):
-    #     self.init = init
-    #     self.name = name
-    #     self.private_name = make_private_field(name)
-    #
-    #     self._query: Attrib = mini_annotated.__metadata__[0]
-    #
-    #     self._field_validator: typing.Optional[ValidatorType] = None
-    #     self._preformat_callback: typing.Optional[PreFormatType] = None
-    #
-    #     self._default = (
-    #         self._query.default
-    #         if self._query.default is MISSING
-    #         else dc_field_obj.default
-    #     )
-    #     self._default_factory = (
-    #         self._query.default_factory
-    #         if self._query.default_factory is MISSING
-    #         else dc_field_obj.default_factory
-    #     )
+    __slots__ = ()
 
     def to_representation(self) -> str:
         return "disabled_all_validation"
@@ -784,6 +756,11 @@ class _TypedFieldBase(_MiniFieldBase):
 
     def coerce(self, value: typing.Any) -> typing.Any:
         raise NotImplementedError("coerce method not implemented for this field type")
+
+    def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
+        raise NotImplementedError(
+            "field_type_validator method not implemented for this field type"
+        )
 
     def _config_forward_ref(self, instance: "BaseModel"):
         pass

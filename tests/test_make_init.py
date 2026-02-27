@@ -3,13 +3,13 @@ import pytest
 import inspect
 from dataclasses import MISSING
 
-from pydantic_mini.make_init import (
+from formax.make_init import (
     join_string,
     make_disable_all_validation_init,
     make_disable_type_check_init,
     make_fast_init,
 )
-from pydantic_mini.utils import make_private_field
+from formax.utils import make_private_field
 
 
 class DummyQuery:
