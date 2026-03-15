@@ -1,9 +1,8 @@
 import pytest
 import json
 import typing
-from dataclasses import dataclass, is_dataclass
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
-from pydantic_mini.formatters import (
+from formax import BaseModel, MiniAnnotated, Attrib
+from formax.formatters import (
     DictModelFormatter,
     JSONModelFormatter,
     CSVModelFormatter,

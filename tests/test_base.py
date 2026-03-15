@@ -2,8 +2,16 @@ import unittest
 import typing
 from unittest.mock import patch
 from dataclasses import field, InitVar
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, preformat, validator
-from pydantic_mini.exceptions import ValidationError
+from formax import (
+    BaseModel,
+    MiniAnnotated,
+    Attrib,
+    preformat,
+    validator,
+    ValidationFlags,
+    InitStrategy,
+    ValidationError,
+)
 
 
 class TestBase(unittest.TestCase):
@@ -35,7 +43,7 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                disable_all_validation = True
+                validation = ValidationFlags.NONE
 
         class DisabledTypeCheckValidationClass(BaseModel):
             email: MiniAnnotated[
@@ -44,7 +52,7 @@ class TestBase(unittest.TestCase):
             value: MiniAnnotated[int, Attrib(gt=4, lt=20, default=5)]
 
             class Config:
-                disable_typecheck = True
+                validation = ValidationFlags.COERCE
 
         cls.MyModel = MyModel
         cls.DataClassField = DataClassField
@@ -99,10 +107,10 @@ class TestBase(unittest.TestCase):
         self.assertEqual(p2.school, "knust")
 
         # validate positional arguments are required
-        with self.assertRaises(AttributeError):
+        with self.assertRaises((AttributeError, TypeError)):
             Person(name="nafiu")
 
-        with self.assertRaises(AttributeError):
+        with self.assertRaises((AttributeError, TypeError)):
             Person1(school="knust")
 
     def test_figured_out_optional_field_from_annotation_has_none_value(self):
@@ -358,7 +366,7 @@ class TestBase(unittest.TestCase):
             location: typing.Union[int, str]
 
             class Config:
-                strict_mode = True
+                validation = ValidationFlags.TYPECHECK
 
         person = Person(name="nafiu", location="kumasi")
         self.assertEqual(person.name, "nafiu")
@@ -413,7 +421,7 @@ class TestBase(unittest.TestCase):
     def test_init_model_is_call(self):
         class Person(BaseModel):
             name: str
-            school: InitVar[str]
+            school: InitVar[str] = None
 
             def __post_init__(self, school):
                 self.school = school
@@ -483,22 +491,17 @@ class TestBase(unittest.TestCase):
         person = Person(names=["a", "b", "c"])
         self.assertEqual(person.names, ["a", "b", "c"])
 
-    def test_overridden_init_and_post_init_raises_permissionerror(self):
+    def test_overridden_init_raises_permissionerror(self):
         with self.assertRaises(PermissionError):
 
             class Person(BaseModel):
                 names: typing.List[str]
 
+                class Config:
+                    init_strategy = InitStrategy.DATACLASS
+
                 def __init__(self, names):
                     self.names = names
-
-        # with self.assertRaises(PermissionError):
-        #
-        #     class Person1(BaseModel):
-        #         names: typing.List[str]
-        #
-        #         def __post_init__(self):
-        #             pass
 
     def test_model_can_be_configured(self):
         class Person(BaseModel):
@@ -540,7 +543,7 @@ class TestBase(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.DisabledTypeCheckValidationClass(email="nafiu", value="me")
 
-        with self.assertRaises(TypeError):
+        with self.assertRaises(ValidationError):
             self.DisabledTypeCheckValidationClass(email="nafiu@ex.com", value="me")
 
     def test_coercion_doesnt_work_in_strict_mode(self):
@@ -552,9 +555,36 @@ class TestBase(unittest.TestCase):
             location: Location
 
             class Config:
-                strict_mode = True
+                validation = ValidationFlags.TYPECHECK
 
         with self.assertRaises(TypeError):
             Person.loads(
                 {"name": "nafiu", "location": {"name": "kumasi"}}, _format="dict"
             )
+
+    def test_frozen_class_can_be_initialised(self):
+        class FrozenUser(BaseModel):
+            name: str
+            age: int
+
+            class Config:
+                frozen = True
+
+        class NonFrozenUser(BaseModel):
+            name: str
+            age: int
+
+        frozen_user = FrozenUser("name", 12)
+        non_frozen_user = NonFrozenUser("name", 12)
+
+        self.assertEqual(frozen_user.name, "name")
+        self.assertEqual(frozen_user.age, 12)
+
+        self.assertEqual(non_frozen_user.name, "name")
+        self.assertEqual(non_frozen_user.age, 12)
+
+        non_frozen_user.school = "knust"
+        self.assertEqual(non_frozen_user.school, "knust")
+
+        with self.assertRaises(AttributeError):
+            frozen_user.school = "knust"

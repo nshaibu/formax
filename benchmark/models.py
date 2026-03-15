@@ -2,7 +2,12 @@ import json
 from dataclasses import dataclass
 from typing import List
 
-from pydantic_mini import BaseModel
+try:
+    from pydantic import BaseModel as PydanticBaseModel
+except ImportError:
+    PydanticBaseModel = object
+
+from formax import BaseModel, ValidationFlags
 
 
 DATA = {
@@ -62,6 +67,9 @@ class UserNestedMini(BaseModel):
     name: str
     profile: ProfileMini
 
+    # class Config:
+    #     frozen = True
+
 
 class DisableAllValidationMini(BaseModel):
     id: int
@@ -69,7 +77,7 @@ class DisableAllValidationMini(BaseModel):
     profile: ProfileMini
 
     class Config:
-        disable_all_validations = True
+        validation = ValidationFlags.NONE
 
 
 class DisableTypeCheckMini(BaseModel):
@@ -78,7 +86,7 @@ class DisableTypeCheckMini(BaseModel):
     profile: ProfileMini
 
     class Config:
-        disable_type_check = True
+        validation = ValidationFlags.COERCE
 
 
 class FlatDisableAllValidationProfileMini(BaseModel):
@@ -88,7 +96,8 @@ class FlatDisableAllValidationProfileMini(BaseModel):
     active: bool
 
     class Config:
-        disable_all_validations = True
+        # frozen = True
+        validation = ValidationFlags.NONE
 
 
 class FlatDisableTypeCheckProfileMini(BaseModel):
@@ -98,4 +107,26 @@ class FlatDisableTypeCheckProfileMini(BaseModel):
     active: bool
 
     class Config:
-        disable_type_check = True
+        # frozen = True
+        validation = ValidationFlags.COERCE
+
+
+# ----------------------------
+# Pydantic v2
+# ----------------------------
+class ProfilePyd(PydanticBaseModel):
+    email: str
+    age: int
+
+
+class UserPyd(PydanticBaseModel):
+    id: int
+    name: str
+    scores: List[int]
+    active: bool
+
+
+class UserNestedPyd(PydanticBaseModel):
+    id: int
+    name: str
+    profile: ProfilePyd

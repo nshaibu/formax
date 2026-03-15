@@ -1,6 +1,6 @@
 import pytest
-from pydantic_mini import BaseModel, validator, preformat
-from pydantic_mini.exceptions import ValidationError
+import typing
+from formax import BaseModel, validator, preformat, ValidationError
 
 
 def test_single_field_validator():
@@ -65,7 +65,6 @@ def test_single_field_preformatter():
 
 def test_validator_with_typing_any():
     """Test validators skip for typing.Any fields."""
-    import typing
 
     class Model(BaseModel):
         validated: int
@@ -77,17 +76,17 @@ def test_validator_with_typing_any():
                 raise ValidationError("Must be positive")
 
         @validator(["flexible"])
-        def this_should_not_run(self, value):
-            # Should be skipped
-            raise ValidationError("Should not reach here")
+        def this_should_run(self, value):
+            raise ValidationError("This should run")
 
-    m = Model(validated=10, flexible="anything")
-    assert m.flexible == "anything"
+    with pytest.raises(ValidationError):
+        m = Model(validated=10, flexible="anything")
 
 
 def test_nested_model_validation():
     """Test validators work with nested models."""
 
+    # import pdb;pdb.set_trace()
     class Inner(BaseModel):
         value: int
 

@@ -23,17 +23,32 @@ D = typing.TypeVar(
 )
 
 
+_registry: typing.Dict[str, typing.Type] = {}
+
+
 class BaseModelFormatter(ABC):
     format_name: str = None
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if cls.format_name:
+            names = (
+                cls.format_name
+                if isinstance(cls.format_name, (list, tuple))
+                else [cls.format_name]
+            )
+            for name in names:
+                _registry[name] = cls
+
     @classmethod
-    def is_format_name(cls, format_name: str) -> bool:
-        format_names = (
-            isinstance(cls.format_name, (list, tuple))
-            and format_name
-            or [cls.format_name]
-        )
-        return format_name in format_names
+    def get_formatter(
+        cls, format_name: str, **config: typing.Any
+    ) -> "BaseModelFormatter":
+        try:
+            formatter_cls = _registry[format_name]
+        except KeyError:
+            raise KeyError(f"Format {format_name} not found")
+        return formatter_cls(**config)  # type: ignore
 
     @abstractmethod
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
@@ -43,28 +58,15 @@ class BaseModelFormatter(ABC):
     def decode(self, instance: "BaseModel") -> typing.Any:
         pass
 
-    @classmethod
-    def get_formatters(cls):
-        for subclass in cls.__subclasses__():
-            yield from subclass.get_formatters()
-            yield subclass
-
-    @classmethod
-    def get_formatter(cls, format_name: str, **config) -> "BaseModelFormatter":
-        for subclass in cls.get_formatters():
-            if subclass.is_format_name(format_name):
-                return subclass(**config)  # type: ignore
-        raise KeyError(f"Format {format_name} not found")
-
 
 class DictModelFormatter(BaseModelFormatter):
     format_name = "dict"
 
+    @staticmethod
     def _encode(
-        self, _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
+        _type: typing.Type["BaseModel"], obj: typing.Dict[str, typing.Any]
     ) -> "BaseModel":
-        resolver = _ExpectedTypeResolver(actual_types=(_type,), strict_model=False)
-        instance = resolver.coerce(obj)
+        instance = _type.__pydantic_model_resolver__.coerce(obj)
         return instance
 
     def encode(self, _type: typing.Type["BaseModel"], obj: D) -> T:
