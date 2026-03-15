@@ -1,4 +1,4 @@
-from pydantic_mini import BaseModel, validator, preformat, ValidationError
+from formax import BaseModel, validator, preformat, ValidationError
 from enum import Enum
 
 

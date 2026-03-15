@@ -5,13 +5,15 @@ import sys
 import types
 import typing
 import inspect
+import warnings
 import collections
-from dataclasses import MISSING, InitVar
+from enum import IntFlag, Enum, auto
+from dataclasses import MISSING, InitVar, field
 
 if sys.version_info >= (3, 11):
-    from typing import dataclass_transform
+    from typing import dataclass_transform, TypeAlias
 else:
-    from typing_extensions import dataclass_transform
+    from typing_extensions import dataclass_transform, TypeAlias
 
 if sys.version_info < (3, 9):
     from typing_extensions import Annotated, get_origin, get_args, ForwardRef
@@ -19,10 +21,11 @@ else:
     from typing import Annotated, get_origin, get_args, ForwardRef
 
 from .exceptions import ValidationError
+from .utils import process_validator_errors
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
-    from .fields import MiniField
+    from .resolver import TypeNode
 
 __all__ = (
     "Annotated",
@@ -36,6 +39,7 @@ __all__ = (
     "is_type",
     "is_mini_annotated",
     "NoneType",
+    "TypeAlias",
     "ModelConfigWrapper",
     "is_builtin_type",
     "InitVar",
@@ -49,6 +53,10 @@ __all__ = (
     "dataclass_transform",
     "ValidatorType",
     "PreFormatType",
+    "PostFormatType",
+    "ResolverGenerator",
+    "ValidationFlags",
+    "InitStrategy",
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +65,10 @@ logger = logging.getLogger(__name__)
 ValidatorType = typing.Callable[["BaseModel", typing.Any], typing.Union[bool, None]]
 
 PreFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
+
+PostFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
+
+ResolverGenerator = typing.Generator["TypeNode", None, None]
 
 
 # backward compatibility
@@ -86,66 +98,195 @@ _DATACLASS_CONFIG_FIELD: typing.List[str] = [
     "frozen",
 ]
 
-_NON_DATACLASS_CONFIG_FIELD: typing.List[str] = [
-    "strict_mode",
-    "disable_typecheck",
-    "disable_all_validation",
-]
-
 _resolved_forward_ref: typing.Dict[str, typing.Type[typing.Any]] = {}
 
 
+class InitStrategy(Enum):
+    DATACLASS = auto()  # default dataclass __init__
+    FAST = auto()  # codegen __init__ (batch assignment)
+    CUSTOM = auto()  # user-defined __init__
+
+
+class ValidationFlags(IntFlag):
+    """Bitwise flags for validation control."""
+
+    # Core validation components
+    TYPECHECK = 1 << 0  # 0b001 = 1 - Type checking (isinstance)
+    COERCE = 1 << 1  # 0b010 = 2  - Type coercion ("123" → 123)
+
+    # Convenience combinations
+    NONE = 0  # No validation at all
+    STRICT = TYPECHECK  # No coercion, but validate
+    VALIDATED = TYPECHECK | COERCE  # Full validation (default)
+
+    @staticmethod
+    def should_typecheck(flags: "ValidationFlags") -> bool:
+        """Check if type checking is enabled."""
+        return (flags & ValidationFlags.TYPECHECK) != 0
+
+    @staticmethod
+    def should_coerce(flags: "ValidationFlags") -> bool:
+        """Check if type coercion is enabled."""
+        return (flags & ValidationFlags.COERCE) != 0
+
+    @staticmethod
+    def is_validated(flags: "ValidationFlags") -> bool:
+        """Check if full validation is enabled (typecheck + coerce)."""
+        required = ValidationFlags.TYPECHECK | ValidationFlags.COERCE
+        return (flags & required) == required
+
+
 class ModelConfigWrapper:
-    init: bool = True
-    repr: bool = True
-    eq: bool = True
-    order: bool = False
-    unsafe_hash: bool = False
-    frozen: bool = False
+    """
+    Wrapper for model configuration options.
 
-    # pydantic-mini specific config
+    Provides defaults and validation for both standard dataclass
+    config and pydantic-mini specific options.
+    """
 
-    strict_mode: bool = False  # if true, don't coerce values
+    # Standard dataclass config
+    DEFAULT_REPR = True
+    DEFAULT_EQ = True
+    DEFAULT_ORDER = False
+    DEFAULT_UNSAFE_HASH = False
+    DEFAULT_FROZEN = False
 
-    # If true, all forward references are treated as typing.Any.
-    # This, therefore, disables all validations for the field
-    forward_refs_as_any: bool = False
+    # Pydantic-mini specific
+    DEFAULT_INIT_STRATEGY = InitStrategy.FAST
+    DEFAULT_VALIDATION = ValidationFlags.VALIDATED
+    DEFAULT_FORWARD_REFS_AS_ANY = False
+    DEFAULT_SCHEMA_MODE = False
 
-    # If true, disable type check but apply all custom validators
-    disable_typecheck: bool = False
+    DEFAULT_DROP_INHERITED_VALIDATORS = False
+    DEFAULT_DROP_INHERITED_PREFORMATTERS = False
 
-    # If true, disable all validations
-    disable_all_validation: bool = False
+    DEFAULT_UNSAFE_DISABLE_VALIDATORS = False
+    DEFAULT_UNSAFE_DISABLE_PREFORMATTERS = False
 
-    def __init__(self, config: typing.Type):
-        self.config = config
+    def __init__(self, config: typing.Optional[typing.Type[typing.Any]] = None):
+        # Standard dataclass config
+        self.repr: bool = self.DEFAULT_REPR
+        self.eq: bool = self.DEFAULT_EQ
+        self.order: bool = self.DEFAULT_ORDER
+        self.unsafe_hash: bool = self.DEFAULT_UNSAFE_HASH
+        self.frozen: bool = self.DEFAULT_FROZEN
 
-    def get_config(self, name: str) -> typing.Any:
-        if self.config and hasattr(self.config, name):
-            return getattr(self.config, name, None)
-        return getattr(self.__class__, name, None)
+        # Init strategy
+        self.init_strategy: InitStrategy = self.DEFAULT_INIT_STRATEGY
 
-    def get_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-        dt = collections.OrderedDict()
-        for config_field in _DATACLASS_CONFIG_FIELD:
-            dt[config_field] = self.get_config(config_field)
-        return dt
+        # Validation control
+        self.validation: ValidationFlags = self.DEFAULT_VALIDATION
 
-    def get_non_dataclass_config(self) -> typing.Dict[str, typing.Any]:
-        dt = collections.OrderedDict()
-        for config_field in _NON_DATACLASS_CONFIG_FIELD:
-            dt[config_field] = self.get_config(config_field)
-        return dt
+        # Other options,
+        # If true, all forward references are treated as typing.Any.
+        # This, therefore, disables all validations for the field
+        self.forward_refs_as_any: bool = self.DEFAULT_FORWARD_REFS_AS_ANY
+
+        self.schema_mode: bool = self.DEFAULT_SCHEMA_MODE
+
+        self.drop_inherited_validators = self.DEFAULT_DROP_INHERITED_VALIDATORS
+        self.drop_inherited_preformatters = self.DEFAULT_DROP_INHERITED_PREFORMATTERS
+
+        self.skip_validators = self.DEFAULT_UNSAFE_DISABLE_VALIDATORS
+        self.skip_preformatters = self.DEFAULT_UNSAFE_DISABLE_PREFORMATTERS
+
+        self._config = config
+
+        if config is not None:
+            self._apply_config(config)
+            self._validate_config()
+
+    def _apply_config(self, config: typing.Type[typing.Any]) -> None:
+        for key, value in config.__dict__.items():
+            if key.startswith("_") or callable(value):
+                continue
+
+            if hasattr(self, key):
+                self.__dict__[key] = value
+            else:
+                warnings.warn(
+                    f"Unknown configuration option: {key}", UserWarning, stacklevel=3
+                )
+
+    def _validate_config(self) -> None:
+        # Validate frozen + eq combination
+        if self.frozen and not self.eq:
+            warnings.warn(
+                "frozen=True with eq=False may cause issues with hashing",
+                UserWarning,
+                stacklevel=3,
+            )
+
+    def should_typecheck(self) -> bool:
+        """Check if type checking is enabled."""
+        return ValidationFlags.should_typecheck(self.validation)
+
+    def should_coerce(self) -> bool:
+        """Check if type coercion is enabled."""
+        return ValidationFlags.should_coerce(self.validation)
+
+    def is_validated(self) -> bool:
+        """Check if full validation is enabled."""
+        return ValidationFlags.is_validated(self.validation)
+
+    def as_dataclass_kwargs(self) -> dict:
+        return {
+            "init": True,
+            "repr": self.repr,
+            "eq": self.eq,
+            "order": self.order,
+            "unsafe_hash": self.unsafe_hash,
+            "frozen": self.frozen,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"ModelConfigWrapper("
+            f"init_strategy={self.init_strategy.value}, "
+            f"frozen={self.frozen})"
+        )
+
+    def copy(self, **overrides) -> "ModelConfigWrapper":
+        """
+        Create a copy of config with optional overrides.
+
+        Args:
+            **overrides: Configuration values to override.
+
+        Returns:
+            New ModelConfigWrapper instance.
+
+        Example:
+            >>> config = ModelConfigWrapper()
+            >>> strict_config = config.copy(validation=ValidationFlags.STRICT)
+        """
+        new_config = ModelConfigWrapper(self._config)
+
+        for key, value in overrides.items():
+            if hasattr(new_config, key):
+                setattr(new_config, key, value)
+            else:
+                raise ValueError(f"Unknown config option: {key}")
+
+        new_config._validate_config()
+
+        return new_config
 
 
 class Attrib:
     __slots__ = (
+        "init",
+        "repr",
+        "hash",
+        "compare",
+        "metadata",
+        "kw_only",
+        "field_name",
         "default",
         "default_factory",
         "pre_formatter",
-        "required",
+        "post_formatter",
         "help_text",
-        "allow_none",
         "gt",
         "ge",
         "lt",
@@ -158,12 +299,17 @@ class Attrib:
 
     def __init__(
         self,
+        init: bool = True,
+        repr: bool = True,
+        hash: typing.Optional[bool] = None,
+        compare: bool = True,
+        metadata: typing.Any = None,
+        kw_only: typing.Any = MISSING,
         default: typing.Optional[typing.Any] = MISSING,
         default_factory: typing.Optional[typing.Callable[[], typing.Any]] = MISSING,
         pre_formatter: typing.Union[PreFormatType, MISSING] = MISSING,
-        required: bool = False,
+        post_formatter: typing.Union[PostFormatType, MISSING] = MISSING,
         help_text: typing.Optional[str] = None,
-        allow_none: bool = False,
         gt: typing.Optional[float] = None,
         ge: typing.Optional[float] = None,
         lt: typing.Optional[float] = None,
@@ -180,8 +326,6 @@ class Attrib:
             default (Any): A default value for the attribute, if provided.
             default_factory (Callable): A callable that generates a default value.
             pre_formatter (Callable): A function to preprocess/format the value before validation.
-            required (bool): Whether the attribute is required.
-            allow_none (bool): Whether None is an acceptable value.
             gt (float): Value must be greater than this (exclusive).
             ge (float): Value must be greater than or equal to this (inclusive).
             lt (float): Value must be less than this (exclusive).
@@ -195,18 +339,23 @@ class Attrib:
             default (Any, optional): Static default value to use if none is provided.
             default_factory (Callable, optional): Function that returns a default value.
             pre_formatter (Callable, optional): Function to format/preprocess the value before validation.
-            required (bool): Whether this field is required (default: False).
-            allow_none (bool): Whether None is allowed as a value (default: False).
             gt, ge, lt, le (float, optional): Numeric comparison constraints.
             min_length, max_length (int, optional): Length constraints for sequences.
             pattern (str or Pattern, optional): Regex pattern constraint.
             validators (List[Callable], optional): Additional callables that validate the input.
         """
+        self.init: bool = init
+        self.repr: bool = repr
+        self.hash: typing.Optional[bool] = hash
+        self.compare: bool = compare
+        self.metadata: typing.Any = metadata
+        self.kw_only: bool = kw_only
+
+        self.field_name: typing.Optional[str] = None
         self.default = default
         self.default_factory = default_factory
         self.pre_formatter = pre_formatter
-        self.required = required
-        self.allow_none = allow_none
+        self.post_formatter = post_formatter
         self.help_text = help_text
         self.gt = gt
         self.ge = ge
@@ -232,6 +381,20 @@ class Attrib:
         )
 
     @property
+    def dc_field(self):
+        kwargs = {
+            "init": self.init,
+            "repr": self.repr,
+            "hash": self.hash,
+            "compare": self.compare,
+            "metadata": self.metadata,
+            "kw_only": self.kw_only,
+        }
+        if self.default_factory is not MISSING:
+            return field(default_factory=self.default_factory, **kwargs)
+        return field(default=self.default, **kwargs)
+
+    @property
     def validators(self) -> typing.List[ValidatorType]:
         return self._validators
 
@@ -244,15 +407,15 @@ class Attrib:
     def has_validators(self):
         return len(self._validators) > 0
 
-    def validate(self, value: typing.Any, field_name: str) -> typing.Optional[bool]:
-        if self.allow_none and value is None:
-            return True
+    def validate(
+        self,
+        instance: "BaseModel",
+        value: typing.Any,
+        field_name: str,
+        aggregate_errors: bool,
+    ) -> typing.Optional[bool]:
 
-        if self.required and value is None:
-            raise ValidationError(
-                f"Field '{field_name}' is required but not provided (value is None).",
-                params={"field_name": field_name},
-            )
+        self.field_name = field_name
 
         for name in ("gt", "ge", "lt", "le", "min_length", "max_length", "pattern"):
             validation_factor = getattr(self, name, None)
@@ -263,71 +426,128 @@ class Attrib:
                 continue
 
             validator = getattr(self, f"_validate_{name}")
-            validator(value)
+            try:
+                validator(value)
+            except Exception as e:
+                err = process_validator_errors(
+                    instance=instance,
+                    field_name=field_name,
+                    value=value,
+                    error=e,
+                    aggregate_errors=aggregate_errors,
+                )
+                if err:
+                    raise err
         return True
 
     def _validate_gt(self, value: typing.Any):
+        params = {
+            "validator": "greater_than",
+            "comparison_operator": "gt",
+            "comparison_value": self.gt,
+        }
         try:
             if not (value > self.gt):
                 raise ValidationError(
                     f"Field value '{value}' is not greater than '{self.gt}'",
-                    params={"gt": self.gt},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'gt' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'gt' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"comparison_error": str(e), **params},
             )
 
     def _validate_ge(self, value: typing.Any):
+        params = {
+            "validator": "greater_than_or_equals_to",
+            "comparison_operator": "ge",
+            "comparison_value": self.ge,
+        }
         try:
             if not (value >= self.ge):
                 raise ValidationError(
                     f"Field value '{value}' is not greater than or equal to '{self.ge}'",
-                    params={"ge": self.ge},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'ge' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'ge' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_lt(self, value: typing.Any):
+        params = {
+            "validator": "less_than",
+            "comparison_operator": "lt",
+            "comparison_value": self.lt,
+        }
+
         try:
             if not (value < self.lt):
                 raise ValidationError(
                     f"Field value '{value}' is not less than '{self.lt}'",
-                    params={"lt": self.lt},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'lt' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'lt' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_le(self, value: typing.Any):
+        params = {
+            "validator": "less_than_or_equals_to",
+            "comparison_operator": "le",
+            "comparison_value": self.le,
+        }
+
         try:
             if not (value <= self.le):
                 raise ValidationError(
                     f"Field value '{value}' is not less than or equal to '{self.le}'",
-                    params={"le": self.le},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
-        except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'le' to supplied value {value!r}"
+        except TypeError as e:
+            raise ValidationError(
+                f"Unable to apply constraint 'le' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={**params, "comparison_error": str(e)},
             )
 
     def _validate_min_length(self, value: typing.Any):
         try:
             if not (len(value) >= self.min_length):
                 raise ValidationError(
-                    "too_short",
-                    {
-                        "field_type": "Value",
+                    f"Field value '{value}' is too short, must be at least {self.min_length} characters",
+                    field=self.field_name,
+                    value=value,
+                    params={
+                        "validator": "too_short",
                         "min_length": self.min_length,
-                        "actual_length": len(value),
                     },
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'min_length' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'min_length' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"validator": "too_short", "min_length": self.min_length},
             )
 
     def _validate_max_length(self, value: typing.Any):
@@ -335,28 +555,39 @@ class Attrib:
             actual_length = len(value)
             if actual_length > self.max_length:
                 raise ValidationError(
-                    f"Value is too long. {actual_length} > {self.max_length}",
-                    {
-                        "field_type": "Value",
+                    f"Field value {value!r} is too long. {actual_length} > {self.max_length}",
+                    field=self.field_name,
+                    value=value,
+                    params={
+                        "validator": "too_long",
                         "max_length": self.max_length,
                         "actual_length": actual_length,
                     },
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'max_length' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'max_length' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params={"validator": "too_long", "max_length": self.max_length},
             )
 
     def _validate_pattern(self, value: typing.Any):
+        params = {"pattern": self.pattern, "validator": "pattern", "value": value}
         try:
             if not re.match(self.pattern, value):
                 raise ValidationError(
                     f"Field value '{value}' does not match pattern",
-                    params={"pattern": self.pattern, "value": value},
+                    field=self.field_name,
+                    value=value,
+                    params=params,
                 )
         except TypeError:
-            raise TypeError(
-                f"Unable to apply constraint 'pattern' to supplied value {value!r}"
+            raise ValidationError(
+                f"Unable to apply constraint 'pattern' to supplied value {value!r}",
+                field=self.field_name,
+                value=value,
+                params=params,
             )
 
 
