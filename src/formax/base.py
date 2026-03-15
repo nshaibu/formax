@@ -87,7 +87,9 @@ def _configure_mini_field(
     config: ModelConfigWrapper,
 ) -> None:
     if mini_field.kind in ["scalar_full", "collection_full"]:
-        import pdb;pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         if not mini_field.has_forward_ref():
             handler = (
                 scalar_full_no_config_ref

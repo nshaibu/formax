@@ -23,7 +23,7 @@ D = typing.TypeVar(
 )
 
 
-_registry: dict[str, typing.Type["BaseModelFormatter"]] = {}
+_registry: typing.Dict[str, typing.Type["BaseModelFormatter"]] = {}
 
 
 class BaseModelFormatter(ABC):

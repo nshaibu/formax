@@ -591,11 +591,6 @@ class _MiniFieldBase:
             "has_forward_ref method not implemented for this field type"
         )
 
-    # def to_representation(self) -> str:
-    #     raise NotImplementedError(
-    #         "to_representation method not implemented for this field type"
-    #     )
-
     def get_default(self) -> typing.Any:
         if self._default is not MISSING:
             return self._default
@@ -761,14 +756,26 @@ class _TypedFieldBase(_MiniFieldBase):
             "field_type_validator method not implemented for this field type"
         )
 
-    def _config_forward_ref(self, instance: "BaseModel"):
-        pass
+    def finalise_type_resolver(self) -> None:
+        raise NotImplementedError(
+            "finalise_type_resolver method not implemented for this field type"
+        )
+
+    def config_forward_ref(self, instance: "BaseModel"):
+        model_context = get_model_context(instance)
+        self.expected_type.module_context = model_context
+        if self.inner_type:
+            self.inner_type.module_context = model_context
+        self.finalise_type_resolver()
+
+        # Replace it with no-op after the first resolution
+        self.config_forward_ref = lambda *_: None
 
     def __set__(self, instance: "BaseModel", value: typing.Any) -> None:
         value = self.processor_default_value(value)
         value = self.run_preformatters(instance, value)
 
-        self._config_forward_ref(instance)
+        self.config_forward_ref(instance)
 
         try:
             value = self.coerce(value)
@@ -838,11 +845,6 @@ class _FullValidationField(_TypedFieldBase):
 
     def coerce(self, value: typing.Any) -> typing.Any:
         return self.expected_type.coerce(value)
-
-    def _config_forward_ref(self, instance: "BaseModel"):
-        model_context = get_model_context(instance)
-        self.expected_type.module_context = model_context
-        self.finalise_type_resolver()
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         if not self.expected_type.validate(value):
@@ -922,12 +924,6 @@ class _CollectionFullValidationField(_TypedFieldBase):
             )
             return coerced_value
         return value
-
-    def _config_forward_ref(self, instance: "BaseModel"):
-        model_context = get_model_context(instance)
-        self.expected_type.module_context = model_context
-        self.inner_type.module_context = model_context
-        self.finalise_type_resolver()
 
     def field_type_validator(self, instance: "BaseModel", value: typing.Any) -> None:
         for val in value:

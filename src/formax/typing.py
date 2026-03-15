@@ -11,9 +11,9 @@ from enum import IntFlag, Enum, auto
 from dataclasses import MISSING, InitVar, field
 
 if sys.version_info >= (3, 11):
-    from typing import dataclass_transform
+    from typing import dataclass_transform, TypeAlias
 else:
-    from typing_extensions import dataclass_transform
+    from typing_extensions import dataclass_transform, TypeAlias
 
 if sys.version_info < (3, 9):
     from typing_extensions import Annotated, get_origin, get_args, ForwardRef
@@ -25,7 +25,7 @@ from .utils import process_validator_errors
 
 if typing.TYPE_CHECKING:
     from .base import BaseModel
-    from .fields import _MiniFieldBase
+    from .resolver import TypeNode
 
 __all__ = (
     "Annotated",
@@ -39,6 +39,7 @@ __all__ = (
     "is_type",
     "is_mini_annotated",
     "NoneType",
+    "TypeAlias",
     "ModelConfigWrapper",
     "is_builtin_type",
     "InitVar",
@@ -53,6 +54,7 @@ __all__ = (
     "ValidatorType",
     "PreFormatType",
     "PostFormatType",
+    "ResolverGenerator",
     "ValidationFlags",
     "InitStrategy",
 )
@@ -65,6 +67,8 @@ ValidatorType = typing.Callable[["BaseModel", typing.Any], typing.Union[bool, No
 PreFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
 
 PostFormatType = typing.Callable[["BaseModel", typing.Any], typing.Any]
+
+ResolverGenerator = typing.Generator["TypeNode", None, None]
 
 
 # backward compatibility
