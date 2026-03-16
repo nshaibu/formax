@@ -102,6 +102,22 @@ class User(BaseModel):
             raise ValueError("Passwords do not match")
 ```
 
+- The `validator` decorator is used to add custom validation logic to model fields.
+- The `order` parameter determines the order in which the validators are executed.
+
+The model above can also be expressed without using the decorators as below:
+```python
+from formax import BaseModel, MiniAnnotated, Attrib
+
+def confirm_password(instance, value):
+    if value != instance.password:
+        raise ValueError( "Passwords do not match"
+
+class User(BaseModel):
+    password: MiniAnnotated[str, Attrib(min_length=8)]
+    confirm_password: MiniAnnotated[str, Attrib(min_length=8, validators=[confirm_password])]
+```
+
 ---
 
 
@@ -130,6 +146,20 @@ class Address(BaseModel):
 addr = Address(city="london", timestamp=datetime.now())
 print(addr.city)  # Output: London
 print(addr.timestamp)  # Output: datetime object
+```
+
+- The `preformat` and `postformat` decorators are used to format and postprocess model fields. 
+- They can be used to transform data before it is assigned to the field or to transform data after it is retrieved from the field.
+- The `order` parameter determines the order in which the formatting hooks are executed.
+
+The model above can also be expressed without using the decorators as below:
+```python
+from datetime import datetime
+from formax import BaseModel, MiniAnnotated, Attrib
+
+class Address(BaseModel):
+    city: MiniAnnotated[str, Attrib(pre_formatter=lambda instance, value: value.title())]
+    timestamp: MiniAnnotated[float, Attrib(pre_formatter=lambda instance, value: value.timestamp(), post_formatter=lambda instance, value: datetime.fromtimestamp(value)]
 ```
 
 ---
