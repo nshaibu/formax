@@ -3,7 +3,7 @@ requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
 name = "formax-py"
-version="0.10.0"
+version="0.8.0"
 requires-python = ">=3.8"
 authors = [
     {name = "nshaibu", email = "nafiushaibu1@gmail.com"},
