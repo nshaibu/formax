@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ===========================================================================================
 """
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 from .base import BaseModel
 from .typing import Attrib, MiniAnnotated, ValidationFlags, InitStrategy
