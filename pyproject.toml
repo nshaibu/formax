@@ -1,15 +1,25 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 [project]
-name = "formax"
+name = "formax-py"
 version="0.10.0"
 requires-python = ">=3.8"
 authors = [
     {name = "nshaibu", email = "nafiushaibu1@gmail.com"},
 ]
-description="Pure Python data validation. Zero dependencies. Runs everywhere."
-keywords=["formax", "formax", "class builder", "Schema", "ORM", "dataclass", "data-validation", "dataclass with vaidation", "Data Serialisation", "Serialisation"]
+description="High-performance Python model builder and validation engine with zero dependencies"
+keywords = [
+  "data-validation",
+  "schema",
+  "dataclass",
+  "model",
+  "serialization",
+  "validation",
+  "class-builder",
+  "orm",
+  "formax"
+]
 readme = "README.md"
 license = { file = "LICENSE" }
 dependencies = [
@@ -17,7 +27,6 @@ dependencies = [
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
@@ -29,10 +38,12 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 [project.urls]
-"Issue Tracker"="https://github.com/nshaibu/formax/issues"
+Homepage="https://github.com/nshaibu/formax"
+Issues="https://github.com/nshaibu/formax/issues"
 CI="https://github.com/nshaibu/formax/actions"
 [project.optional-dependencies]
 dev = [

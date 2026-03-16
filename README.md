@@ -30,7 +30,7 @@
 
 ## Overview
 
-Formax is a Python library that extends the functionality of Python's native dataclass by providing built-in validation, serialisation, and support for custom validators. It is designed to be simple, minimalistic, and based entirely on Python's standard library, making it perfect for projects requiring data validation and object-relational mapping (ORM) without relying on third-party dependencies.
+Formax is a Python library that extends the functionality of Python's native dataclass by providing built-in validation, serialisation, and support for custom validators. It is designed to be simple, modern, and based entirely on Python's standard library, making it perfect for projects requiring data validation and object-relational mapping (ORM) without relying on third-party dependencies.
 
 ### Key Features
 
