@@ -1,11 +1,11 @@
-# Pydantic-Mini
+# Formax
 
-[![Build Status](https://github.com/nshaibu/pydantic-mini/actions/workflows/python_package.yml/badge.svg)](https://github.com/nshaibu/pydantic-mini/actions)
+[![Build Status](https://github.com/nshaibu/formax/actions/workflows/python_package.yml/badge.svg)](https://github.com/nshaibu/formax/actions)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Status](https://img.shields.io/pypi/status/pydantic_mini.svg)](https://pypi.python.org/pypi/pydantic_mini)
-[![Latest](https://img.shields.io/pypi/v/pydantic_mini.svg)](https://pypi.python.org/pypi/pydantic_mini)
-[![PyV](https://img.shields.io/pypi/pyversions/pydantic_mini.svg)](https://pypi.python.org/pypi/pydantic_mini)
-[![codecov](https://codecov.io/gh/nshaibu/pydantic-mini/graph/badge.svg?token=HBP9OC9IJJ)](https://codecov.io/gh/nshaibu/pydantic-mini)
+[![Status](https://img.shields.io/pypi/status/formax.svg)](https://pypi.python.org/pypi/formax)
+[![Latest](https://img.shields.io/pypi/v/formax.svg)](https://pypi.python.org/pypi/formax)
+[![PyV](https://img.shields.io/pypi/pyversions/formax.svg)](https://pypi.python.org/pypi/formax)
+[![codecov](https://codecov.io/gh/nshaibu/formax/graph/badge.svg?token=HBP9OC9IJJ)](https://codecov.io/gh/nshaibu/formax)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](http://makeapullrequest.com)
 
 
@@ -30,7 +30,7 @@
 
 ## Overview
 
-Pydantic-mini is a lightweight Python library that extends the functionality of Python's native dataclass by providing built-in validation, serialisation, and support for custom validators. It is designed to be simple, minimalistic, and based entirely on Python's standard library, making it perfect for projects requiring data validation and object-relational mapping (ORM) without relying on third-party dependencies.
+Formax is a Python library that extends the functionality of Python's native dataclass by providing built-in validation, serialisation, and support for custom validators. It is designed to be simple, minimalistic, and based entirely on Python's standard library, making it perfect for projects requiring data validation and object-relational mapping (ORM) without relying on third-party dependencies.
 
 ### Key Features
 
@@ -45,13 +45,13 @@ Pydantic-mini is a lightweight Python library that extends the functionality of 
 
 ### From PyPI
 ```bash
-pip install pydantic-mini
+pip install formax
 ```
 
 ### From Source
 ```bash
-git clone https://github.com/nshaibu/pydantic-mini.git
-cd pydantic-mini
+git clone https://github.com/nshaibu/formax.git
+cd formax
 # Use the code directly in your project
 ```
 
@@ -60,7 +60,7 @@ cd pydantic-mini
 Here's a simple example to get you started:
 
 ```python
-from pydantic_mini import BaseModel
+from formax import BaseModel
 
 class Person(BaseModel):
     name: str
@@ -92,7 +92,7 @@ except TypeError as e:
 `MiniAnnotated` is used to add metadata and validation rules to fields:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from formax import BaseModel, MiniAnnotated, Attrib
 
 class User(BaseModel):
     username: MiniAnnotated[str, Attrib(max_length=20)]
@@ -188,7 +188,7 @@ class DatabaseModel(BaseModel):
 
 ### Type Validation
 
-Pydantic-mini automatically validates field types based on annotations:
+Formax automatically validates field types based on annotations:
 
 ```python
 class Product(BaseModel):
@@ -244,7 +244,7 @@ def validator_name(instance, value):
 You can pass validator functions directly to `Attrib`:
 
 ```python
-from pydantic_mini.exceptions import ValidationError
+from formax.exceptions import ValidationError
 
 def validate_not_kofi(instance: BaseModel, value: str):
     if value.lower() == "kofi":
@@ -260,8 +260,8 @@ class Employee(BaseModel):
 The `@validator` decorator allows you to define custom validation logic for one or more fields.
 
 ```python
-from pydantic_mini.decorators import validator
-from pydantic_mini.exceptions import ValidationError
+from formax.decorators import validator
+from formax.exceptions import ValidationError
 
 class School(BaseModel):
     name: str
@@ -283,8 +283,8 @@ class School(BaseModel):
 Apply validation rules to all fields:
 
 ```python
-from pydantic_mini.decorators import validator
-from pydantic_mini.exceptions import ValidationError
+from formax.decorators import validator
+from formax.exceptions import ValidationError
 
 class StrictModel(BaseModel):
     field1: str
@@ -302,8 +302,8 @@ class StrictModel(BaseModel):
 You can apply the same validator to multiple fields by passing multiple field names:
 
 ```python
-from pydantic_mini import BaseModel, validator
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, validator
+from formax.exceptions import ValidationError
 
 class School(BaseModel):
     name: str
@@ -331,8 +331,8 @@ school = School(name="KNUST", location="Kumasi", students_count=5000)
 Validators can access other fields through the `instance` parameter for cross-field validation:
 
 ```python
-from pydantic_mini import BaseModel, validator
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, validator
+from formax.exceptions import ValidationError
 
 class PasswordModel(BaseModel):
     password: str
@@ -359,8 +359,8 @@ except ValidationError as e:
 Combine `@validator` with `Attrib` constraints:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib, validator
+from formax.exceptions import ValidationError
 
 class RangeModel(BaseModel):
     min_value: MiniAnnotated[int, Attrib(ge=0)]
@@ -391,8 +391,8 @@ Understanding the order of validation operations is important:
 4. **Custom Validators** - Apply `@validator` decorated methods
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from formax.exceptions import ValidationError
 from enum import Enum
 
 class Priority(Enum):
@@ -429,8 +429,8 @@ class Task(BaseModel):
 Here's a comprehensive example demonstrating multiple validation techniques:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from formax.exceptions import ValidationError
 from enum import Enum
 import re
 
@@ -556,14 +556,14 @@ except ValidationError as e:
 
 ## Nested Validation
 
-Pydantic-mini supports nested validation, allowing you to compose complex data models from simpler ones. When a field is annotated with another `BaseModel` class, the validation system automatically applies to the nested class and all its fields recursively. This enables you to build hierarchical data structures with comprehensive validation at every level.
+Formax supports nested validation, allowing you to compose complex data models from simpler ones. When a field is annotated with another `BaseModel` class, the validation system automatically applies to the nested class and all its fields recursively. This enables you to build hierarchical data structures with comprehensive validation at every level.
 
 ### Basic Nested Validation
 
 When you define a field using another `BaseModel` class, both the parent and nested models are fully validated:
 
 ```python
-from pydantic_mini import BaseModel
+from formax import BaseModel
 
 class School(BaseModel):
     name: str
@@ -577,8 +577,8 @@ class Person(BaseModel):
 Validators work seamlessly with nested models:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator, preformat
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib, validator, preformat
+from formax.exceptions import ValidationError
 
 class Address(BaseModel):
     street: str
@@ -645,7 +645,7 @@ print(person.school.name)  # Output: KNUST
 print(type(person.school))  # Output: <class 'School'>
 ```
 
-When a dictionary is provided for a nested `BaseModel` field, pydantic-mini automatically:
+When a dictionary is provided for a nested `BaseModel` field, formax automatically:
 1. Detects that the field type is a `BaseModel` subclass
 2. Convert the dictionary to an instance of that class
 3. Applies all validation rules defined in the nested class
@@ -655,8 +655,8 @@ When a dictionary is provided for a nested `BaseModel` field, pydantic-mini auto
 All validation rules defined in nested models are fully enforced:
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib, validator
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib, validator
+from formax.exceptions import ValidationError
 
 class School(BaseModel):
     name: MiniAnnotated[str, Attrib(max_length=50)]
@@ -820,7 +820,7 @@ person = Person(name="Nafiu", school=school)
 
 ## Self References and Forward References
 
-`pydantic-mini` fully supports self-referential models and forward references. 
+`formax` fully supports self-referential models and forward references. 
 Unlike basic dataclasses, it automatically resolves string-based type hints and recursively
 inflates nested data into model instances during initialization.
 
@@ -830,7 +830,7 @@ You can define tree-like structures by referencing the class name as a string. T
 
 ```python
 from typing import Optional, List
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from formax import BaseModel, MiniAnnotated, Attrib
 
 class TreeNode(BaseModel):
     value: int
@@ -1093,7 +1093,7 @@ Understanding the order of operations is crucial:
 ### Basic Example
 
 ```python
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
+from formax import BaseModel, MiniAnnotated, Attrib
 
 def uppercase_formatter(value: str) -> str:
     """Convert string to uppercase before validation."""
@@ -1119,7 +1119,7 @@ A common use case is converting string values to enum instances:
 ```python
 from enum import Enum
 from typing import Union
-from pydantic_mini.exceptions import ValidationError
+from formax.exceptions import ValidationError
 
 class Status(Enum):
     ACTIVE = "active"
@@ -1382,7 +1382,7 @@ print(model.clean_text)  # Output: "hello world"
 
 ### Supported Formats
 
-Pydantic-mini supports three serialization formats:
+Formax supports three serialization formats:
 
 #### JSON
 ```python
@@ -1418,7 +1418,7 @@ for person in people:
 
 ## Model Formatters
 
-Model formatters in pydantic-mini define how a model is loaded from and dumped to
+Model formatters in formax define how a model is loaded from and dumped to
 external representations such as `JSON`, `dicts`, `CSV`, or custom formats like `YAML` or `TOML`.
 
 They operate at the model boundary and are responsible for full-model serialization and deserialization.
@@ -1474,7 +1474,7 @@ Here is an example of how to add YAML support using the `PyYAML` library.
 ```python
 import yaml
 from typing import Type, Any
-from pydantic_mini.formatters import BaseModelFormatter, DictModelFormatter
+from formax.formatters import BaseModelFormatter, DictModelFormatter
 
 class YAMLModelFormatter(DictModelFormatter):
     """
@@ -1643,8 +1643,8 @@ johns = orm.find_by_name("John")
 ```python
 import re
 from typing import Optional, List
-from pydantic_mini import BaseModel, MiniAnnotated, Attrib
-from pydantic_mini.exceptions import ValidationError
+from formax import BaseModel, MiniAnnotated, Attrib
+from formax.exceptions import ValidationError
 
 def validate_strong_password(instance, password: str):
     """Validate password strength."""
@@ -1785,7 +1785,7 @@ print("Products JSON:", products_json)
 All validation failures raise `ValidationError`:
 
 ```python
-from pydantic_mini.exceptions import ValidationError
+from formax.exceptions import ValidationError
 
 try:
     user = User(username="", email="invalid-email", age=-5)
@@ -1844,7 +1844,7 @@ Choose the appropriate serialization format based on your needs:
 
 ## Contributing
 
-Contributions are welcome! To contribute to pydantic-mini:
+Contributions are welcome! To contribute to formax:
 
 1. Fork the repository
 2. Create a feature branch
@@ -1856,8 +1856,8 @@ Contributions are welcome! To contribute to pydantic-mini:
 ### Development Setup
 
 ```bash
-git clone https://github.com/nshaibu/pydantic-mini.git
-cd pydantic-mini
+git clone https://github.com/nshaibu/formax.git
+cd formax
 # Set up your development environment
 # Run tests
 python -m pytest tests/
@@ -1872,7 +1872,7 @@ python -m pytest tests/
 
 ## License
 
-Pydantic-mini is open-source and available under the GPL License.
+Formax is open-source and available under the GPL License.
 
 ## Changelog
 
@@ -1883,4 +1883,3 @@ Pydantic-mini is open-source and available under the GPL License.
 
 ---
 
-*This documentation is for pydantic-mini, a lightweight alternative to Pydantic with zero external dependencies.*
