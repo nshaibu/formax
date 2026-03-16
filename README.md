@@ -1,5 +1,7 @@
 # Formax
 
+**Formax — Fast, Flexible, Fully Validated Python Models.**
+
 High-performance Python model builder and validation engine with configurable performance tiers.  
 Formax is designed for developers who want the flexibility of modern validation frameworks with the speed of lightweight data models.
 
@@ -67,38 +69,67 @@ pip install formax-py
 ## Model Features
 
 ```python
-from formax import BaseModel, Field
+from formax import BaseModel, Attrib, MiniAnnotated
 
 class Person(BaseModel):
     name: str
-    age: int = Field(gt=0)
+    age: MiniAnnotated[int, Attrib(gt=0, lt=120)]
+    email: MiniAnnotated[str, Attrib(pattern=r"^\S+@\S+\.\S+$")]
+
+Person(name="Alice", age=30, email="alice@example.com")  # ✅ Valid
+Person(name="Bob", age=-1, email="bob@example")    # ❌ Raises ValidationError
 ```
 
 ---
 
-## Validation Example
+## Validation Hooks
 
 ```python
-Person(name="Alice", age=30)  # ✅ Valid
-Person(name="Bob", age=-1)    # ❌ Raises ValidationError
+from formax import BaseModel, validator
+
+class User(BaseModel):
+    password: str
+    confirm_password: str
+    
+    @validator(["password", "confirm_password"], order=1)
+    def validate_password_length(self, value):
+        if len(value) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+    
+    @validator(["confirm_password"], order=10)
+    def validate_passwords_match(self, value):
+        if value != self.password:
+            raise ValueError("Passwords do not match")
 ```
 
 ---
+
 
 ## Formatting Hooks
 
 ```python
-from formax import BaseModel, preformat
+from datetime import datetime
+from formax import BaseModel, preformat, postformat
 
 class Address(BaseModel):
     city: str
-
-    @preformat(["city"])
-    def format_city(self, value):
+    timestamp: float
+    
+    @preformat(["city"], order=1)
+    def format_city(self, value) -> str:
         return value.title()
-
-addr = Address(city="london")
+    
+    @preformat(["timestamp"], order=1)
+    def format_timestamp(self, value: datetime) -> float:
+        return value.timestamp()
+    
+    @postformat(["timestamp"], order=1)
+    def postformat_timestamp(self, value: float) -> datetime:
+        return datetime.fromtimestamp(value)
+    
+addr = Address(city="london", timestamp=datetime.now())
 print(addr.city)  # Output: London
+print(addr.timestamp)  # Output: datetime object
 ```
 
 ---
