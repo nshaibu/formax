@@ -5,10 +5,10 @@ from dataclasses import MISSING
 from .fields import _MiniFieldBase
 from .utils import (
     make_private_field,
-    PYDANTIC_MINI_MODEL_CONTEXT,
-    PYDANTIC_INIT_VARS_FIELDS,
+    FORMAX_MODEL_CONTEXT,
+    FORMAX_INIT_VARS_FIELDS,
     process_validator_errors,
-    PYDANTIC_MINI_MODEL_CONFIG,
+    FORMAX_MODEL_CONFIG,
 )
 from .fields import ModelConfigWrapper, ValidationFlags
 
@@ -50,7 +50,7 @@ def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
 
 
 def _post_init_call_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
-    init_fields = attrs.get(PYDANTIC_INIT_VARS_FIELDS, [])
+    init_fields = attrs.get(FORMAX_INIT_VARS_FIELDS, [])
     args_str = join_string(init_fields)
     lines = (f"\tself.__post_init__({args_str[:-1]})",)
     return "\n".join(lines)
@@ -194,11 +194,11 @@ def _fast_init_body(
     field_names = list(attrs.get("__annotations__", []))
 
     model_context_statement = (
-        f"\tmodel_context = getattr(self, {PYDANTIC_MINI_MODEL_CONTEXT!r}, None)\n"
+        f"\tmodel_context = getattr(self, {FORMAX_MODEL_CONTEXT!r}, None)\n"
     )
     model_context_statement += f"\tif not model_context: model_context = getattr(inspect.getmodule(self), '__dict__', None)\n"
     model_config_statement = (
-        f"\tmodel_config = getattr(self, {PYDANTIC_MINI_MODEL_CONFIG!r}, None)\n"
+        f"\tmodel_config = getattr(self, {FORMAX_MODEL_CONFIG!r}, None)\n"
     )
 
     body.append(model_context_statement)

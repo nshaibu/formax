@@ -26,11 +26,13 @@ from .typing import (
 )
 from .utils import (
     make_private_field,
-    PYDANTIC_MINI_MODEL_CONFIG,
-    PYDANTIC_MINI_MODEL_CONTEXT,
-    PYDANTIC_MINI_SIGNATURE_MATCHER,
-    PYDANTIC_MINI_ERROR_COLLECTOR,
-    PYDANTIC_INIT_VARS_FIELDS,
+    strip_formax_prefix,
+    FORMAX_MODEL_CONFIG,
+    FORMAX_MODEL_CONTEXT,
+    FORMAX_SIGNATURE_MATCHER,
+    FORMAX_ERROR_COLLECTOR,
+    FORMAX_INIT_VARS_FIELDS,
+    PRIVATE_FIELD_PREFIX,
 )
 from .make_init import (
     make_disable_all_validation_init,
@@ -59,7 +61,7 @@ def wrap_schema_mode_init(cls) -> typing.Callable[[typing.Any], None]:
 
     def new_init(self, *args, **kwargs):
         collector = ValidationErrorCollector()
-        object.__setattr__(self, PYDANTIC_MINI_ERROR_COLLECTOR, collector)
+        object.__setattr__(self, FORMAX_ERROR_COLLECTOR, collector)
 
         orig_init(self, *args, **kwargs)
 
@@ -87,7 +89,9 @@ def _configure_mini_field(
     config: ModelConfigWrapper,
 ) -> None:
     if mini_field.kind in ["scalar_full", "collection_full"]:
-        import pdb;pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         if not mini_field.has_forward_ref():
             handler = (
                 scalar_full_no_config_ref
@@ -111,7 +115,7 @@ def _add_private_attr_slots(attrs: typing.Dict[str, typing.Any]) -> None:
     else:
         slots = tuple(slots)
 
-    private_slots = [PYDANTIC_MINI_ERROR_COLLECTOR]
+    private_slots = [FORMAX_ERROR_COLLECTOR]
 
     for fd in dc_fields:
         private_name = make_private_field(fd)
@@ -205,8 +209,8 @@ class SchemaMeta(type):
         new_attrs["__validators__"] = validators
         new_attrs["__preformatters__"] = preformatters
         new_attrs["__postformatters__"] = postformatters
-        new_attrs[PYDANTIC_MINI_MODEL_CONTEXT] = None
-        new_attrs[PYDANTIC_INIT_VARS_FIELDS] = cls._prepare_model_fields(
+        new_attrs[FORMAX_MODEL_CONTEXT] = None
+        new_attrs[FORMAX_INIT_VARS_FIELDS] = cls._prepare_model_fields(
             new_attrs, validators, preformatters, config
         )
 
@@ -226,7 +230,7 @@ class SchemaMeta(type):
         if dataclass_config["frozen"]:
             _add_private_attr_slots(new_attrs)
 
-        new_attrs[PYDANTIC_MINI_MODEL_CONFIG] = config
+        new_attrs[FORMAX_MODEL_CONFIG] = config
 
         new_class = super().__new__(cls, name, bases, new_attrs, **kwargs)
 
@@ -247,7 +251,7 @@ class SchemaMeta(type):
                     )
 
         matcher = _ClassSignatureMatcher(new_class)
-        setattr(new_class, PYDANTIC_MINI_SIGNATURE_MATCHER, matcher)
+        setattr(new_class, FORMAX_SIGNATURE_MATCHER, matcher)
 
         new_class.__pydantic_model_resolver__ = _ExpectedTypeResolver(
             actual_types=(new_class,),
@@ -640,7 +644,7 @@ class PreventOverridingMixin:
 
     def __init_subclass__(cls: "BaseModel", **kwargs):
         if cls.__name__ != "BaseModel":
-            config = cls.get_pydantic_mini_config()
+            config = cls.get_formax_config()
             if config.init_strategy in [InitStrategy.FAST, InitStrategy.CUSTOM]:
                 return
 
@@ -661,13 +665,22 @@ class PreventOverridingMixin:
     field_specifiers=(MiniAnnotated, Attrib),
 )
 class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
+    """
+    Base class for all Formax models. Provides common functionality and configuration for data validation, serialization, and deserialization.
+
+    This class serves as the foundation for all Formax models, offering a structured approach to data handling and validation.
+    It supports various data formats and provides methods for serialization and deserialization.
+
+    Note: __dict__ exposes internal storage; use __getstate__() for public state access.
+
+    """
 
     # These are populated by the metaclass
     __validators__: typing.Dict[str, typing.List[ValidatorType]]
     __preformatters__: typing.Dict[str, typing.List[PreFormatType]]
     __postformatters__: typing.Dict[str, typing.List[PostFormatType]]
 
-    __pydantic_mini_model_context__ = None
+    __formax_model_context__ = None
 
     @staticmethod
     def get_formatter_by_name(name: str) -> BaseModelFormatter:
@@ -683,5 +696,22 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
         return self.get_formatter_by_name(_format).decode(instance=self)
 
     @classmethod
-    def get_pydantic_mini_config(cls) -> ModelConfigWrapper:
-        return getattr(cls, PYDANTIC_MINI_MODEL_CONFIG, None)
+    def get_formax_config(cls) -> ModelConfigWrapper:
+        return getattr(cls, FORMAX_MODEL_CONFIG, None)
+
+    def __setstate__(self, state: typing.Dict[str, typing.Any]) -> None:
+        current_state = self.__dict__
+        # BaseModel uses descriptors to store field values. However, the field in the object state that keeps the value is modified
+        # to _formax_field_name. Now this will result state as if it was not modified. We need to check for this before update the field
+        for field_name, value in state.items():
+            if not field_name.startswith(PRIVATE_FIELD_PREFIX):
+                field_name = make_private_field(field_name)
+
+            if field_name in current_state:
+                current_state[field_name] = value
+
+    def __getstate__(self) -> typing.Dict[str, typing.Any]:
+        state = {}
+        for field_name, value in self.__dict__.items():
+            state[strip_formax_prefix(field_name)] = value
+        return state

@@ -5,23 +5,28 @@ from .exceptions import ValidationError, ValidationErrorCollector
 if typing.TYPE_CHECKING:
     from .base import BaseModel
 
-PRIVATE_FIELD_PREFIX = "_pydantic_mini_"
+PRIVATE_FIELD_PREFIX = "_formax_"
 
-PYDANTIC_MINI_MODEL_CONFIG = "__pydantic_mini_model_config__"
+FORMAX_MODEL_CONFIG = "__formax_model_config__"
 
-PYDANTIC_MINI_SIGNATURE_MATCHER = "__pydantic_mini_signature_matcher__"
+FORMAX_SIGNATURE_MATCHER = "__formax_signature_matcher__"
 
-PYDANTIC_MINI_MODEL_CONTEXT = "__pydantic_mini_model_context__"
+FORMAX_MODEL_CONTEXT = "__formax_model_context__"
 
 _DATACLASS_CONFIG_PARAMS = "__dataclass_params__"
 
-PYDANTIC_MINI_ERROR_COLLECTOR = "_pydantic_mini_internal_error_collect"
+FORMAX_ERROR_COLLECTOR = "_formax_internal_error_collect"
 
-PYDANTIC_INIT_VARS_FIELDS = "__pydantic_mini_init_vars__"
+FORMAX_INIT_VARS_FIELDS = "__formax_init_vars__"
 
 
 def make_private_field(field_name):
     return f"{PRIVATE_FIELD_PREFIX}{field_name}"
+
+def strip_formax_prefix(name: str) -> str:
+        if name.startswith(PRIVATE_FIELD_PREFIX):
+            return name[len(PRIVATE_FIELD_PREFIX):]
+        return name
 
 
 def process_validator_errors(
@@ -33,7 +38,7 @@ def process_validator_errors(
 ) -> typing.Optional[Exception]:
     if aggregate_errors:
         collector: ValidationErrorCollector = getattr(
-            instance, PYDANTIC_MINI_ERROR_COLLECTOR, []
+            instance, FORMAX_ERROR_COLLECTOR, []
         )
         if isinstance(error, ValidationError):
             error_list = []

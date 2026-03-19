@@ -31,9 +31,9 @@ from .exceptions import ValidationError
 from .utils import (
     make_private_field,
     process_validator_errors,
-    PYDANTIC_MINI_MODEL_CONFIG,
-    PYDANTIC_MINI_SIGNATURE_MATCHER,
-    PYDANTIC_MINI_MODEL_CONTEXT,
+    FORMAX_MODEL_CONFIG,
+    FORMAX_SIGNATURE_MATCHER,
+    FORMAX_MODEL_CONTEXT,
 )
 
 if typing.TYPE_CHECKING:
@@ -135,13 +135,13 @@ def get_model_context(
     if instance is None:
         return None
     cls = instance.__class__
-    context = getattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, None)
+    context = getattr(cls, FORMAX_MODEL_CONTEXT, None)
     if context:
         return context
 
     context = getattr(inspect.getmodule(cls), "__dict__", None)
     if cache_context:
-        setattr(cls, PYDANTIC_MINI_MODEL_CONTEXT, context)
+        setattr(cls, FORMAX_MODEL_CONTEXT, context)
 
     return context
 
@@ -280,7 +280,7 @@ class _ExpectedType:
         else:
             self.is_enum = False
 
-        self.is_model = PYDANTIC_MINI_MODEL_CONFIG in getattr(
+        self.is_model = FORMAX_MODEL_CONFIG in getattr(
             typ_, "__dict__", {}
         ) or is_dataclass(typ_)
 
@@ -327,9 +327,7 @@ class _ExpectedType:
 
     def get_signature_matcher(self) -> _ClassSignatureMatcher:
         if getattr(self, "signature_matcher", None) is None:
-            self.signature_matcher = getattr(
-                self.type, PYDANTIC_MINI_SIGNATURE_MATCHER, None
-            )
+            self.signature_matcher = getattr(self.type, FORMAX_SIGNATURE_MATCHER, None)
             if self.signature_matcher is None:
                 self.signature_matcher = _ClassSignatureMatcher(self.type)
         return self.signature_matcher

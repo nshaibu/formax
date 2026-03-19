@@ -12,6 +12,7 @@ from formax import (
     InitStrategy,
     ValidationError,
 )
+from formax.utils import make_private_field
 
 
 class TestBase(unittest.TestCase):
@@ -588,3 +589,89 @@ class TestBase(unittest.TestCase):
 
         with self.assertRaises(AttributeError):
             frozen_user.school = "knust"
+
+    # State management
+    def test_getstate_strips_private_prefix_only_from_start(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+
+        # simulate internal/private storage keys
+        person.__dict__.clear()
+        person.__dict__[make_private_field("name")] = "nafiu"
+        person.__dict__[make_private_field("age")] = 12
+        person.__dict__["nickname_formax_suffix"] = "keep-me"
+
+        state = person.__getstate__()
+
+        self.assertEqual(state["name"], "nafiu")
+        self.assertEqual(state["age"], 12)
+        self.assertEqual(state["nickname_formax_suffix"], "keep-me")
+
+    def test_getstate_returns_copy_not_live_dict(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+        state = person.__getstate__()
+
+        state["name"] = "changed"
+        self.assertEqual(person.name, "nafiu")
+
+    def test_setstate_updates_existing_private_fields(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+
+        person.__setstate__({"name": "shaibu", "age": 20})
+
+        self.assertEqual(person.name, "shaibu")
+        self.assertEqual(person.age, 20)
+
+    def test_setstate_ignores_unknown_fields(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+
+        person.__setstate__({
+            "name": "shaibu",
+            "age": 20,
+            "unknown_field": "ignored",
+        })
+
+        self.assertEqual(person.name, "shaibu")
+        self.assertEqual(person.age, 20)
+        self.assertFalse(hasattr(person, "unknown_field"))
+
+    def test_setstate_accepts_already_private_keys(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+
+        person.__setstate__({make_private_field("name"): "updated", make_private_field("age"): 99})
+
+        self.assertEqual(person.name, "updated")
+        self.assertEqual(person.age, 99)
+
+    def test_getstate_setstate_roundtrip(self):
+        class Person(BaseModel):
+            name: str
+            age: int
+
+        person = Person(name="nafiu", age=12)
+        state = person.__getstate__()
+
+        restored = Person(name="placeholder", age=0)
+        restored.__setstate__(state)
+
+        self.assertEqual(restored.name, "nafiu")
+        self.assertEqual(restored.age, 12)
