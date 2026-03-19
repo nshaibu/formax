@@ -1,6 +1,6 @@
 """
 ===========================================================================================
-Copyright (C) 2025 Nafiu Shaibu <nafiushaibu1@gmail.com>.
+Copyright (C) 2026 Nafiu Shaibu <nafiushaibu1@gmail.com>.
 Purpose: Dataclass with validation
 -------------------------------------------------------------------------------------------
 This is free software; you can redistribute it and/or modify it
@@ -19,7 +19,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ===========================================================================================
 """
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from .base import BaseModel
 from .typing import Attrib, MiniAnnotated, ValidationFlags, InitStrategy
