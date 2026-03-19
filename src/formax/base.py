@@ -701,8 +701,6 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
 
     def __setstate__(self, state: typing.Dict[str, typing.Any]) -> None:
         current_state = self.__dict__
-        # BaseModel uses descriptors to store field values. However, the field in the object state that keeps the value is modified
-        # to _formax_field_name. Now this will result state as if it was not modified. We need to check for this before update the field
         for field_name, value in state.items():
             if not field_name.startswith(PRIVATE_FIELD_PREFIX):
                 field_name = make_private_field(field_name)
