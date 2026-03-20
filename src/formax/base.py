@@ -701,11 +701,14 @@ class BaseModel(PreventOverridingMixin, metaclass=SchemaMeta):
 
     def __setstate__(self, state: typing.Dict[str, typing.Any]) -> None:
         current_state = self.__dict__
+        dataclass_fields = getattr(self, "__dataclass_fields__", {})
         for field_name, value in state.items():
             if not field_name.startswith(PRIVATE_FIELD_PREFIX):
                 field_name = make_private_field(field_name)
 
-            if field_name in current_state:
+            stripped_field_name = strip_formax_prefix(field_name)
+
+            if stripped_field_name in dataclass_fields:
                 current_state[field_name] = value
 
     def __getstate__(self) -> typing.Dict[str, typing.Any]:

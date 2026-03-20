@@ -23,10 +23,11 @@ FORMAX_INIT_VARS_FIELDS = "__formax_init_vars__"
 def make_private_field(field_name):
     return f"{PRIVATE_FIELD_PREFIX}{field_name}"
 
+
 def strip_formax_prefix(name: str) -> str:
-        if name.startswith(PRIVATE_FIELD_PREFIX):
-            return name[len(PRIVATE_FIELD_PREFIX):]
-        return name
+    if name.startswith(PRIVATE_FIELD_PREFIX):
+        return name[len(PRIVATE_FIELD_PREFIX) :]
+    return name
 
 
 def process_validator_errors(

@@ -1,7 +1,7 @@
 import unittest
 import typing
 from unittest.mock import patch
-from dataclasses import field, InitVar
+from dataclasses import field
 from formax import (
     BaseModel,
     MiniAnnotated,
@@ -11,6 +11,7 @@ from formax import (
     ValidationFlags,
     InitStrategy,
     ValidationError,
+    InitVar,
 )
 from formax.utils import make_private_field
 
@@ -640,11 +641,13 @@ class TestBase(unittest.TestCase):
 
         person = Person(name="nafiu", age=12)
 
-        person.__setstate__({
-            "name": "shaibu",
-            "age": 20,
-            "unknown_field": "ignored",
-        })
+        person.__setstate__(
+            {
+                "name": "shaibu",
+                "age": 20,
+                "unknown_field": "ignored",
+            }
+        )
 
         self.assertEqual(person.name, "shaibu")
         self.assertEqual(person.age, 20)
@@ -657,7 +660,9 @@ class TestBase(unittest.TestCase):
 
         person = Person(name="nafiu", age=12)
 
-        person.__setstate__({make_private_field("name"): "updated", make_private_field("age"): 99})
+        person.__setstate__(
+            {make_private_field("name"): "updated", make_private_field("age"): 99}
+        )
 
         self.assertEqual(person.name, "updated")
         self.assertEqual(person.age, 99)

@@ -1,7 +1,10 @@
+import enum
 import types
+from unittest import mock
+
 import pytest
 import inspect
-from dataclasses import MISSING
+from formax import BaseModel, InitVar, MISSING
 
 from formax.make_init import (
     join_string,
@@ -9,6 +12,7 @@ from formax.make_init import (
     make_disable_type_check_init,
     make_fast_init,
 )
+from formax.fields import _MiniFieldBase
 from formax.typing import ModelConfigWrapper
 from formax.utils import make_private_field
 
@@ -21,7 +25,7 @@ class DummyQuery:
         self.calls.append((value, field_name))
 
 
-class DummyMiniField:
+class DummyMiniField(_MiniFieldBase):
     kind = "scalar_full"
 
     def __init__(
@@ -209,3 +213,25 @@ def test_generated_init_signature_required_vs_default():
     sig = str(inspect.signature(init))
     assert "x" in sig
     assert "y=10" in sig
+
+
+def test_initvar_with_default_value():
+
+    class TypeEnum(enum.Enum):
+        A = "a"
+        B = "b"
+
+    class Person(BaseModel):
+        name: str
+        age: int
+        height: InitVar[float] = 1.80
+        scrollTo: InitVar[str] = "bottom"
+        type: InitVar[TypeEnum] = TypeEnum.A
+
+        def __post_init__(self, height, scrollTo, type):
+            pass
+
+    # mock __post_init__ method of Person and check the call arguments
+    with mock.patch.object(Person, "__post_init__", return_value=None) as mock_init:
+        Person(name="nafiu", age=20)
+        mock_init.assert_called_once_with(1.80, "bottom", TypeEnum.A)

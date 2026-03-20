@@ -1,3 +1,4 @@
+import time
 import typing
 import inspect
 from dataclasses import MISSING
@@ -13,6 +14,14 @@ from .utils import (
 from .fields import ModelConfigWrapper, ValidationFlags
 
 
+def is_mini_field(mini_field: typing.Any) -> bool:
+    return mini_field and isinstance(mini_field, _MiniFieldBase)
+
+
+def is_literal_safe(value):
+    return isinstance(value, (type(None), bool, int, float, str, bytes))
+
+
 def join_string(
     str_list: typing.Union[typing.List[str], typing.Tuple[str, ...]], sep: str = ","
 ) -> str:
@@ -23,30 +32,55 @@ def join_string(
         return sep.join(str_list) + sep
 
 
-def _init_header(attrs: typing.Dict[str, typing.Any]) -> str:
+def _init_header(
+    attrs: typing.Dict[str, typing.Any],
+) -> typing.Tuple[str, typing.Dict[str, typing.Any]]:
     """Generate function signature: def __init__(self, field1, field2=default, ...)"""
     params = []
     default_params = []
+    post_init_params = []
+
+    default_bindings = {}
+
+    init_fields = attrs.get(FORMAX_INIT_VARS_FIELDS, [])
 
     for field_name in attrs.get("__annotations__", []):
         mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
-        if mini_field:
+        if is_mini_field(mini_field):
             default_value = mini_field.get_default()
             if default_value is not MISSING:
-                # Field has default - use repr for proper quoting
-                default_params.append(f"{field_name}={default_value!r}")
+                if is_literal_safe(default_value):
+                    # Field has default - use repr for proper quoting
+                    default_params.append(f"{field_name}={default_value!r}")
+                else:
+                    binding_name = f"_ft_init_head_ZSysd_init_{int(time.time())}_dt_{len(default_bindings)}"
+                    default_bindings[binding_name] = default_value
+                    default_params.append(f"{field_name}={binding_name}")
             else:
                 # Required field
                 params.append(field_name)
         else:
             # No MiniField found - required field
+            if field_name in init_fields:
+                default_value = attrs.get(field_name)
+                if default_value:
+                    if is_literal_safe(default_value):
+                        post_init_params.append(f"{field_name}={default_value!r}")
+                    else:
+                        binding_name = f"_ft_post_init_head_Zzizc_{int(time.time())}_dt_{len(default_bindings)}"
+                        default_bindings[binding_name] = default_value
+                        post_init_params.append(f"{field_name}={binding_name}")
+                else:
+                    post_init_params.append(field_name)
+
+                continue
             params.append(field_name)
 
-    args_tuple = ("self", *params, *default_params)
+    args_tuple = ("self", *params, *default_params, *post_init_params)
     args_str = join_string(args_tuple)
 
-    return f"def __init__({args_str[:-1]}):"
+    return f"def __init__({args_str[:-1]}):", default_bindings
 
 
 def _post_init_call_codegen(attrs: typing.Dict[str, typing.Any]) -> str:
@@ -67,7 +101,7 @@ def _disable_all_validation_init_body(
     for field_name in field_names:
         cb_statement = ""
         mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
-        if mini_field:
+        if is_mini_field(mini_field):
             if mini_field._preformat_callback:
                 cb_name = f"preformat_{field_name}"
                 cbs[cb_name] = mini_field._preformat_callback
@@ -91,11 +125,13 @@ def make_disable_all_validation_init(
     attrs: typing.Dict[str, typing.Any],
 ) -> typing.Callable[[typing.Any], typing.Any]:
     body_code, cbs = _disable_all_validation_init_body(attrs)
-    statements = (_init_header(attrs), body_code)
+    init_head, default_bindings = _init_header(attrs)
+    statements = (init_head, body_code)
 
     code = "\n".join(statements)
 
     local_ns = {}
+    cbs.update(default_bindings)
 
     exec(code, cbs, local_ns)
 
@@ -118,7 +154,7 @@ def _disable_type_check_init_body(
 
         mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
-        if mini_field:
+        if is_mini_field(mini_field):
             if mini_field._preformat_callback:
                 cb_name = f"preformat_{field_name}"
                 preformat_cbs[cb_name] = mini_field._preformat_callback
@@ -154,11 +190,13 @@ def make_disable_type_check_init(
     attrs: typing.Dict[str, typing.Any],
 ) -> typing.Callable[[typing.Any], typing.Any]:
     body_code, cbs = _disable_type_check_init_body(attrs)
-    statements = (_init_header(attrs), body_code)
+    init_head, default_bindings = _init_header(attrs)
+    statements = (init_head, body_code)
 
     code = "\n".join(statements)
 
     local_ns = {}
+    cbs.update(default_bindings)
 
     exec(code, cbs, local_ns)
 
@@ -208,7 +246,7 @@ def _fast_init_body(
 
         mini_field: typing.Optional[_MiniFieldBase] = attrs.get(field_name)
 
-        if mini_field:
+        if is_mini_field(mini_field):
             mini_field_name = f"mini_field_{field_name}"
             mini_fields_dict[mini_field_name] = mini_field
 
@@ -295,14 +333,15 @@ def make_fast_init(
     config: ModelConfigWrapper,
 ) -> typing.Callable[[typing.Any], typing.Any]:
     body_code, cbs = _fast_init_body(attrs, config)
-    statements = (_init_header(attrs), body_code)
+    init_head, default_bindings = _init_header(attrs)
+    statements = (init_head, body_code)
 
     code = "\n".join(statements)
 
     local_ns = {}
     cbs["inspect"] = inspect
     cbs["process_validator_errors"] = process_validator_errors
-    # import pdb;pdb.set_trace()
+    cbs.update(default_bindings)
 
     exec(code, cbs, local_ns)
 

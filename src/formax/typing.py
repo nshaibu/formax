@@ -42,6 +42,7 @@ __all__ = (
     "ModelConfigWrapper",
     "is_builtin_type",
     "InitVar",
+    "MISSING",
     "is_initvar_type",
     "is_class_var_type",
     "get_origin",
