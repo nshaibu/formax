@@ -913,12 +913,24 @@ class _CollectionFullValidationField(_TypedFieldBase):
         self.inner_type.finalize()
 
     def coerce(self, value: typing.Any) -> typing.Any:
-        if self.type_annotation_args and isinstance(value, (dict, list)):
-            value = value if isinstance(value, list) else [value]
-            coerced_value = self.expected_type.coerce(
+        if not self.type_annotation_args:
+            return value
+
+        if isinstance(value, list):
+            return self.expected_type.coerce(
                 [self.inner_type.coerce(val) for val in value]
             )
-            return coerced_value
+
+        if isinstance(value, dict):
+            coerced_dict = {}
+            for k, v in value.items():
+                try:
+                    coerced_dict[k] = self.inner_type.coerce(v)
+                except (TypeError, ValueError, AttributeError):
+                    coerced_dict[k] = v
+
+            return self.expected_type.coerce(coerced_dict)
+
         return value
 
     def _config_forward_ref(self, instance: "BaseModel"):
